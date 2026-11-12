@@ -8,39 +8,76 @@
 </head>
 <body>
   <aside class="sidebar">
-    <div class="brand"><span class="logo">P</span> Pristine</div>
+    <div class="drag" data-tauri-drag-region></div>
+    <div class="brand"><span class="logo">P</span><span>Pristine</span></div>
     <nav>
-      <button class="nav active" data-view="instances">Instances</button>
-      <button class="nav" data-view="settings">Settings</button>
+      <button class="nav active" data-view="library">
+        <svg viewBox="0 0 24 24"><path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z"/></svg>Library
+      </button>
+      <button class="nav" data-view="settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>Settings
+      </button>
     </nav>
-    <div class="sidebar-foot">
-      <label for="username">Offline username</label>
-      <input id="username" maxlength="16" spellcheck="false" placeholder="Player" />
+    <div class="account">
+      <div class="avatar" id="avatar">P</div>
+      <div class="account-text">
+        <input id="username" maxlength="16" spellcheck="false" autocomplete="off" aria-label="Offline username" />
+        <span>Offline account</span>
+      </div>
     </div>
   </aside>
 
   <main>
-    <section id="view-instances">
+    <div class="drag top" data-tauri-drag-region></div>
+
+    <section id="view-library">
       <header>
-        <h1>Instances</h1>
-        <button id="new-btn" class="primary">+ New instance</button>
+        <div>
+          <h1>Library</h1>
+          <p class="muted" id="subtitle"></p>
+        </div>
+        <div class="tools">
+          <input id="search" type="search" placeholder="Search instances" spellcheck="false" />
+          <button id="new-btn" class="primary">New instance <kbd>⌘N</kbd></button>
+        </div>
       </header>
+
+      <div id="hero" class="hero" hidden></div>
       <div id="grid" class="grid"></div>
-      <p id="empty" class="muted" hidden>No instances yet. Create one to get started.</p>
+
+      <div id="empty" class="empty" hidden>
+        <div class="empty-art"><span></span><span></span><span></span><span></span></div>
+        <h2>Your library is empty</h2>
+        <p class="muted">Create an instance to download Minecraft and start playing.</p>
+        <button class="primary" id="empty-new">Create your first instance</button>
+      </div>
+      <p id="no-match" class="muted center" hidden>No instances match your search.</p>
     </section>
 
     <section id="view-settings" hidden>
-      <header><h1>Settings</h1></header>
-      <p class="muted">Game files, Java runtimes and instances are stored in Pristine's data folder. Microsoft sign-in is coming soon; for now Pristine launches with an offline account.</p>
+      <header><div><h1>Settings</h1><p class="muted">Where Pristine keeps things</p></div></header>
+      <div class="panel">
+        <dl id="info"></dl>
+      </div>
+      <div class="panel note">
+        <strong>Accounts</strong>
+        <p class="muted">Pristine currently launches with an offline account, so online servers won't accept it. Microsoft sign-in is on the roadmap.</p>
+      </div>
     </section>
   </main>
 
   <dialog id="new-dialog">
     <form method="dialog" id="new-form">
       <h2>New instance</h2>
-      <label>Name <input id="new-name" required placeholder="My world" autocomplete="off" /></label>
-      <label>Minecraft version <select id="new-version"></select></label>
-      <label class="check"><input type="checkbox" id="show-snapshots" /> Show snapshots and pre-releases</label>
+      <label>Name<input id="new-name" required placeholder="Survival world" autocomplete="off" spellcheck="false" /></label>
+      <div class="field">
+        <span class="label">Minecraft version</span>
+        <div class="seg" role="tablist">
+          <button type="button" class="on" data-kind="release">Releases</button>
+          <button type="button" data-kind="snapshot">Snapshots</button>
+        </div>
+        <select id="new-version" size="6"></select>
+      </div>
       <p id="new-error" class="error" hidden></p>
       <div class="actions">
         <button type="button" id="new-cancel">Cancel</button>
@@ -49,7 +86,25 @@
     </form>
   </dialog>
 
-  <div id="toast" class="toast" hidden></div>
+  <dialog id="edit-dialog">
+    <form method="dialog" id="edit-form">
+      <h2 id="edit-title"></h2>
+      <div class="field">
+        <span class="label">Memory <b id="mem-val"></b></span>
+        <input type="range" id="mem" min="1024" max="16384" step="512" />
+        <small class="muted">Allocated to the game (max heap). 4–6 GB suits most modpacks.</small>
+      </div>
+      <div class="actions spread">
+        <button type="button" id="edit-delete" class="danger">Delete instance</button>
+        <span>
+          <button type="button" id="edit-cancel">Cancel</button>
+          <button type="submit" class="primary">Save</button>
+        </span>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
   <script src="app.js"></script>
 </body>
 </html>

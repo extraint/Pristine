@@ -14,6 +14,9 @@ pub struct Instance {
     pub java_path: Option<String>,
     #[serde(default)]
     pub extra_jvm_args: Vec<String>,
+    /// Unix seconds of the last launch.
+    #[serde(default)]
+    pub last_played: Option<u64>,
 }
 
 fn default_max_mem() -> u32 { 2048 }
@@ -44,6 +47,7 @@ impl Instance {
             max_memory_mb: default_max_mem(),
             java_path: None,
             extra_jvm_args: vec![],
+            last_played: None,
         };
         std::fs::create_dir_all(paths.game_dir(&inst.id))?;
         inst.save(paths)?;

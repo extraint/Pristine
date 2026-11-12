@@ -7,13 +7,24 @@
   "app": {
     "withGlobalTauri": true,
     "windows": [
-      { "label": "main", "title": "Pristine", "width": 1040, "height": 660, "minWidth": 820, "minHeight": 520 }
+      {
+        "label": "main",
+        "title": "Pristine",
+        "width": 1120,
+        "height": 720,
+        "minWidth": 900,
+        "minHeight": 580,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 20, "y": 22 }
+      }
     ],
     "security": { "csp": null }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": ["icons/icon.png"]
+    "icon": ["icons/icon.png"],
+    "category": "Game"
   }
 }

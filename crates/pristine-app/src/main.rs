@@ -23,6 +23,9 @@ struct InstanceView {
     installed: bool,
 }
 
+#[derive(Serialize)]
+struct AppInfo { data_dir: String, os: &'static str, arch: &'static str, version: &'static str }
+
 #[derive(Serialize, Clone)]
 struct ProgressEvent { id: String, stage: String, done: usize, total: usize }
 
@@ -47,6 +50,16 @@ async fn list_versions(state: State<'_, Pristine>) -> CmdResult<VersionList> {
         latest_release: m.latest.release,
         versions: m.versions.into_iter().map(|v| VersionInfo { id: v.id, kind: v.kind }).collect(),
     })
+}
+
+#[tauri::command]
+fn app_info(state: State<'_, Pristine>) -> AppInfo {
+    AppInfo {
+        data_dir: state.paths.root().to_string_lossy().into_owned(),
+        os: std::env::consts::OS,
+        arch: std::env::consts::ARCH,
+        version: env!("CARGO_PKG_VERSION"),
+    }
 }
 
 #[tauri::command]
@@ -94,6 +107,11 @@ async fn launch_instance(app: AppHandle, state: State<'_, Pristine>, id: String,
     state.install_instance(&id, progress.clone()).await.map_err(err)?;
     let cmd = state.prepare_launch(&id, &Account::offline(name), progress).await.map_err(err)?;
     let mut child = cmd.spawn().map_err(err)?;
+    if let Ok(mut inst) = Instance::load(&state.paths, &id) {
+        inst.last_played = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs());
+        let _ = inst.save(&state.paths);
+    }
     let exit_id = id.clone();
     std::thread::spawn(move || {
         let code = child.wait().ok().and_then(|s| s.code());
@@ -107,7 +125,7 @@ fn main() {
     tauri::Builder::default()
         .manage(pristine)
         .invoke_handler(tauri::generate_handler![
-            list_versions, list_instances, create_instance, delete_instance,
+            app_info, list_versions, list_instances, create_instance, delete_instance,
             set_memory, install_instance, launch_instance
         ])
         .run(tauri::generate_context!())

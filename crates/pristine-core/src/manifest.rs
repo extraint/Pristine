@@ -165,15 +165,20 @@ pub fn os_name() -> &'static str {
     else { "linux" }
 }
 
+/// Mojang's architecture names as they appear in rules.
+pub fn current_arch() -> &'static str {
+    if cfg!(target_arch = "aarch64") { "arm64" }
+    else if cfg!(target_arch = "x86") { "x86" }
+    else { "x86_64" }
+}
+
 fn rule_matches(rule: &Rule) -> bool {
     if let Some(os) = &rule.os {
         if let Some(name) = &os.name {
             if name != os_name() { return false; }
         }
         if let Some(arch) = &os.arch {
-            // Only "x86" appears in practice; it means 32-bit x86.
-            let is_x86 = cfg!(target_arch = "x86");
-            if arch == "x86" && !is_x86 { return false; }
+            if arch != current_arch() { return false; }
         }
     }
     if let Some(features) = &rule.features {
@@ -262,6 +267,18 @@ mod tests {
     fn allow_only_other_os_is_denied() {
         let other = if os_name() == "windows" { "linux" } else { "windows" };
         assert!(!rules_allow(Some(&[rule("allow", Some(other))])));
+    }
+
+    #[test]
+    fn arch_rules_follow_cpu() {
+        let mk = |arch: &str| Rule {
+            action: "allow".into(),
+            os: Some(OsRule { name: None, arch: Some(arch.into()) }),
+            features: None,
+        };
+        assert!(rules_allow(Some(&[mk(current_arch())])));
+        let other = if current_arch() == "arm64" { "x86_64" } else { "arm64" };
+        assert!(!rules_allow(Some(&[mk(other)])));
     }
 
     #[test]
