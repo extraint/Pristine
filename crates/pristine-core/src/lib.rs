@@ -1,5 +1,6 @@
 //! Pristine core: everything a Minecraft launcher needs, with no UI attached.
 
+pub mod accounts;
 pub mod auth;
 pub mod download;
 pub mod error;
@@ -8,6 +9,7 @@ pub mod instance;
 pub mod java;
 pub mod launch;
 pub mod manifest;
+pub mod msa;
 pub mod paths;
 
 pub use auth::Account;
@@ -17,7 +19,10 @@ pub use instance::Instance;
 pub use launch::LaunchCommand;
 pub use paths::Paths;
 
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+
+use accounts::{AccountStore, Config, StoredAccount};
 
 /// Entry point holding shared state (paths + HTTP client).
 #[derive(Clone)]
@@ -36,6 +41,69 @@ impl Pristine {
 
     pub async fn versions(&self) -> Result<manifest::VersionManifest> {
         install::fetch_manifest(&self.client).await
+    }
+
+    /// Azure client ID for Microsoft sign-in: `PRISTINE_MS_CLIENT_ID`, then the saved
+    /// setting, then a value baked in at build time.
+    pub fn ms_client_id(&self) -> Option<String> {
+        let nonempty = |s: String| Some(s.trim().to_string()).filter(|s| !s.is_empty());
+        std::env::var("PRISTINE_MS_CLIENT_ID").ok().and_then(nonempty)
+            .or_else(|| Config::load(&self.paths).ms_client_id.and_then(nonempty))
+            .or_else(|| option_env!("PRISTINE_MS_CLIENT_ID").map(String::from).and_then(nonempty))
+    }
+
+    pub fn set_ms_client_id(&self, id: Option<String>) -> Result<()> {
+        let mut c = Config::load(&self.paths);
+        c.ms_client_id = id.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+        c.save(&self.paths)
+    }
+
+    fn require_client_id(&self) -> Result<String> {
+        self.ms_client_id().ok_or_else(|| Error::msg("Microsoft sign-in isn't set up yet: add an Azure client ID in Settings."))
+    }
+
+    /// Step 1 of Microsoft sign-in: get a code for the user to enter in their browser.
+    pub async fn ms_begin(&self) -> Result<msa::DeviceCode> {
+        msa::request_device_code(&self.client, &self.require_client_id()?).await
+    }
+
+    /// Step 2: wait for approval, complete the Xbox/Minecraft chain, and save the account.
+    pub async fn ms_finish(&self, dc: &msa::DeviceCode, cancel: &AtomicBool) -> Result<StoredAccount> {
+        let id = self.require_client_id()?;
+        let tokens = msa::poll_for_token(&self.client, &id, dc, cancel).await?;
+        let session = msa::minecraft_session(&self.client, &tokens.access_token).await?;
+        let stored = StoredAccount {
+            uuid: session.uuid.simple().to_string(),
+            username: session.username,
+            refresh_token: tokens.refresh_token,
+            mc_token: session.access_token,
+            mc_expires_at: session.expires_at,
+        };
+        let mut store = AccountStore::load(&self.paths);
+        store.upsert(stored.clone());
+        store.selected = Some(stored.uuid.clone());
+        store.save(&self.paths)?;
+        Ok(stored)
+    }
+
+    /// A launch-ready account for a stored Microsoft login, refreshing tokens if needed.
+    pub async fn launch_account(&self, uuid: &str) -> Result<Account> {
+        let mut store = AccountStore::load(&self.paths);
+        let mut a = store.accounts.iter().find(|a| a.uuid == uuid).cloned()
+            .ok_or_else(|| Error::msg("That account is no longer signed in"))?;
+        if a.mc_expires_at <= accounts::now() + 300 {
+            let id = self.require_client_id()?;
+            let tokens = msa::refresh_tokens(&self.client, &id, &a.refresh_token).await?;
+            let session = msa::minecraft_session(&self.client, &tokens.access_token).await?;
+            a.refresh_token = tokens.refresh_token;
+            a.mc_token = session.access_token;
+            a.mc_expires_at = session.expires_at;
+            a.username = session.username;
+            store.upsert(a.clone());
+            store.save(&self.paths)?;
+        }
+        let parsed = uuid::Uuid::parse_str(&a.uuid).map_err(|_| Error::msg("corrupt account entry"))?;
+        Ok(Account::microsoft(a.username, parsed, a.mc_token))
     }
 
     /// Download the game, libraries, assets and a matching Java for an instance.

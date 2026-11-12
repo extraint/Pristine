@@ -18,13 +18,14 @@
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>Settings
       </button>
     </nav>
-    <div class="account">
+    <button class="account" id="account-btn" aria-haspopup="dialog">
       <div class="avatar" id="avatar">P</div>
       <div class="account-text">
-        <input id="username" maxlength="16" spellcheck="false" autocomplete="off" aria-label="Offline username" />
-        <span>Offline account</span>
+        <strong id="acct-name">Player</strong>
+        <span id="acct-kind">Offline account</span>
       </div>
-    </div>
+      <svg class="chev" viewBox="0 0 24 24"><path d="M8 10l4-4 4 4M8 14l4 4 4-4"/></svg>
+    </button>
   </aside>
 
   <main>
@@ -60,8 +61,12 @@
         <dl id="info"></dl>
       </div>
       <div class="panel note">
-        <strong>Accounts</strong>
-        <p class="muted">Pristine currently launches with an offline account, so online servers won't accept it. Microsoft sign-in is on the roadmap.</p>
+        <strong>Microsoft sign-in</strong>
+        <p class="muted">Needed to join online servers. Pristine uses your own Azure app registration: create one (public client, personal Microsoft accounts, "Allow public client flows" on), get it approved for the Minecraft API, then paste its Application (client) ID here.</p>
+        <form id="cid-form" class="inline">
+          <input id="client-id" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false" autocomplete="off" />
+          <button class="primary" type="submit">Save</button>
+        </form>
       </div>
     </section>
   </main>
@@ -101,6 +106,31 @@
           <button type="submit" class="primary">Save</button>
         </span>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="accounts-dialog">
+    <form method="dialog" id="accounts-form" onsubmit="return false">
+      <h2>Accounts</h2>
+      <div id="acct-list" class="acct-list"></div>
+      <div class="actions spread">
+        <button type="button" id="add-ms" class="primary">Add Microsoft account</button>
+        <button type="button" id="accounts-close">Done</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="signin-dialog">
+    <form method="dialog" onsubmit="return false">
+      <h2>Sign in with Microsoft</h2>
+      <p class="muted">Open the sign-in page and enter this code:</p>
+      <div class="code" id="code"></div>
+      <div class="row2">
+        <button type="button" id="open-link" class="primary">Open sign-in page</button>
+        <button type="button" id="copy-code">Copy code</button>
+      </div>
+      <p id="signin-status" class="muted"></p>
+      <div class="actions"><button type="button" id="signin-cancel">Cancel</button></div>
     </form>
   </dialog>
 

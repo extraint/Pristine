@@ -39,23 +39,101 @@ function ago(secs) {
 }
 const gb = (mb) => (mb / 1024).toFixed(mb % 1024 ? 1 : 0) + " GB";
 
-// ---------- account ----------
-const usernameEl = $("username");
-function paintAvatar() {
-  const n = usernameEl.value.trim() || "P";
-  $("avatar").textContent = n[0].toUpperCase();
-  $("avatar").style.background = gradient(n);
+// ---------- accounts ----------
+let offlineName = "Player";
+try { offlineName = localStorage.getItem("username") || "Player"; } catch {}
+state.acct = { configured: false, selected: null, accounts: [] };
+
+function currentAccount() {
+  const sel = state.acct.accounts.find((x) => x.uuid === state.acct.selected);
+  return sel ? { name: sel.username, kind: "Microsoft account", seed: sel.uuid } : { name: offlineName.trim() || "Player", kind: "Offline account", seed: offlineName };
 }
-try { usernameEl.value = localStorage.getItem("username") || "Player"; } catch { usernameEl.value = "Player"; }
-paintAvatar();
-usernameEl.addEventListener("input", () => { paintAvatar(); try { localStorage.setItem("username", usernameEl.value); } catch {} });
+function avatar(name, seed, node = el("div", { className: "avatar" })) {
+  node.textContent = (name.trim()[0] || "P").toUpperCase();
+  node.style.background = gradient(seed || name);
+  return node;
+}
+function paintAccount() {
+  const a = currentAccount();
+  $("acct-name").textContent = a.name;
+  $("acct-kind").textContent = a.kind;
+  avatar(a.name, a.seed, $("avatar"));
+}
+async function loadAccounts() {
+  state.acct = await invoke("accounts_state");
+  paintAccount();
+}
+
+function renderAccountList() {
+  const { accounts, selected } = state.acct;
+  const rows = [];
+  const off = el("input", { value: offlineName, maxLength: 16, spellcheck: false, ariaLabel: "Offline username" });
+  off.addEventListener("input", () => { offlineName = off.value; try { localStorage.setItem("username", off.value); } catch {} paintAccount(); });
+  off.addEventListener("click", (e) => e.stopPropagation());
+  const offRadio = el("input", { type: "radio", name: "acct", checked: !selected });
+  const offRow = el("label", { className: "acct" + (!selected ? " on" : "") }, offRadio,
+    avatar(offlineName, offlineName), el("div", { className: "who" }, off, el("small", { textContent: "Offline · can't join online servers" })));
+  offRadio.addEventListener("change", async () => { await invoke("select_account", { uuid: null }); await loadAccounts(); renderAccountList(); });
+  rows.push(offRow);
+  for (const a of accounts) {
+    const radio = el("input", { type: "radio", name: "acct", checked: selected === a.uuid });
+    const rm = el("button", { className: "x", type: "button", textContent: "Remove", title: "Sign out of this account" });
+    rm.addEventListener("click", async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      await invoke("remove_account", { uuid: a.uuid }); await loadAccounts(); renderAccountList();
+    });
+    radio.addEventListener("change", async () => { await invoke("select_account", { uuid: a.uuid }); await loadAccounts(); renderAccountList(); });
+    rows.push(el("label", { className: "acct" + (selected === a.uuid ? " on" : "") }, radio,
+      avatar(a.username, a.uuid), el("div", { className: "who" }, el("strong", { textContent: a.username }), el("small", { textContent: "Microsoft account" })), rm));
+  }
+  $("acct-list").replaceChildren(...rows);
+}
+$("account-btn").addEventListener("click", () => { renderAccountList(); $("accounts-dialog").showModal(); });
+$("accounts-close").addEventListener("click", () => $("accounts-dialog").close());
+
+function openUrl(url) {
+  if (!/^https:\/\//.test(url)) return;
+  const o = window.__TAURI__.opener;
+  if (o && o.openUrl) o.openUrl(url).catch(() => window.open(url)); else window.open(url);
+}
+$("add-ms").addEventListener("click", async () => {
+  if (!state.acct.configured) {
+    $("accounts-dialog").close();
+    showView("settings");
+    return toast("Add your Azure client ID first to enable Microsoft sign-in", true);
+  }
+  try {
+    const dc = await invoke("ms_login_start");
+    state.dc = dc;
+    $("code").textContent = dc.user_code;
+    $("signin-status").textContent = "Waiting for you to approve in your browser…";
+    $("accounts-dialog").close();
+    $("signin-dialog").showModal();
+    openUrl(dc.verification_uri);
+  } catch (e) { toast(String(e), true); }
+});
+$("open-link").addEventListener("click", () => state.dc && openUrl(state.dc.verification_uri));
+$("copy-code").addEventListener("click", () => { navigator.clipboard?.writeText($("code").textContent).then(() => toast("Code copied")).catch(() => {}); });
+$("signin-cancel").addEventListener("click", async () => { await invoke("ms_login_cancel"); $("signin-dialog").close(); });
+$("signin-dialog").addEventListener("cancel", () => invoke("ms_login_cancel"));
+listen("ms-login", async ({ payload: p }) => {
+  if (p.ok) {
+    $("signin-dialog").close();
+    await loadAccounts();
+    toast(`Signed in as ${p.username}`);
+  } else {
+    $("signin-status").textContent = p.error || "Sign-in failed";
+    toast(p.error || "Sign-in failed", true);
+  }
+});
 
 // ---------- navigation ----------
-document.querySelectorAll(".nav").forEach((b) => b.addEventListener("click", () => {
-  document.querySelectorAll(".nav").forEach((n) => n.classList.toggle("active", n === b));
-  $("view-library").hidden = b.dataset.view !== "library";
-  $("view-settings").hidden = b.dataset.view !== "settings";
-}));
+function showView(v) {
+  document.querySelectorAll(".nav").forEach((n) => n.classList.toggle("active", n.dataset.view === v));
+  $("view-library").hidden = v !== "library";
+  $("view-settings").hidden = v !== "settings";
+}
+document.querySelectorAll(".nav").forEach((b) => b.addEventListener("click", () => showView(b.dataset.view)));
 
 // ---------- play controller shared by hero + cards ----------
 function controller(inst, { bar, status, play }) {
@@ -69,7 +147,7 @@ function controller(inst, { bar, status, play }) {
     state.busy.add(inst.id); sync();
     status.textContent = "Preparing…";
     try {
-      await invoke("launch_instance", { id: inst.id, username: usernameEl.value });
+      await invoke("launch_instance", { id: inst.id, username: offlineName });
       state.running.add(inst.id);
       inst.installed = true;
       status.textContent = "Game is running";
@@ -244,8 +322,16 @@ async function loadInfo() {
   const i = await invoke("app_info");
   const names = { macos: "macOS", windows: "Windows", linux: "Linux" };
   const rows = [["Data folder", i.data_dir], ["Platform", `${names[i.os] || i.os} · ${i.arch}`], ["Pristine", "v" + i.version]];
+  $("client-id").value = (await invoke("get_client_id")) || "";
   $("info").replaceChildren(...rows.map(([k, v]) => el("div", {}, el("dt", { textContent: k }), el("dd", { textContent: v }))));
 }
 
+$("cid-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try { await invoke("set_client_id", { id: $("client-id").value }); await loadAccounts(); toast("Saved"); }
+  catch (err) { toast(String(err), true); }
+});
+
 refresh().catch((e) => toast(String(e), true));
+loadAccounts().catch(() => {});
 loadInfo().catch(() => {});

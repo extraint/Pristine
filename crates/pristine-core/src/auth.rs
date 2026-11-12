@@ -13,6 +13,11 @@ pub struct Account {
 }
 
 impl Account {
+    /// A signed-in Microsoft account (the access token is a Minecraft Services token).
+    pub fn microsoft(username: String, uuid: Uuid, access_token: String) -> Account {
+        Account { username, uuid, access_token, user_type: "msa" }
+    }
+
     /// Offline account with the same UUID vanilla servers derive for offline players
     /// (`UUID.nameUUIDFromBytes("OfflinePlayer:<name>")`).
     pub fn offline(username: &str) -> Account {
