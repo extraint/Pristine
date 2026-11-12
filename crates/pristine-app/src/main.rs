@@ -2,8 +2,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use pristine_core::accounts::AccountStore;
+use pristine_core::content::{self, ContentView};
+use pristine_core::modrinth::{Kind, SearchParams, SearchResult};
+use pristine_core::modules::{self, ModuleDef, ModuleReport};
 use pristine_core::msa::DeviceCode;
-use pristine_core::{Account, Instance, Paths, Pristine, Progress, ProgressFn};
+use pristine_core::{Account, Instance, Loader, Paths, Pristine, Progress, ProgressFn};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -154,9 +157,10 @@ fn list_instances(state: State<'_, Pristine>) -> CmdResult<Vec<InstanceView>> {
 }
 
 #[tauri::command]
-fn create_instance(state: State<'_, Pristine>, name: String, version: String) -> CmdResult<Instance> {
+fn create_instance(state: State<'_, Pristine>, name: String, version: String, loader: Option<Loader>) -> CmdResult<Instance> {
+    let loader = loader.unwrap_or_default();
     if name.trim().is_empty() { return Err("Give the instance a name".into()); }
-    Instance::create(&state.paths, &name, &version).map_err(err)
+    Instance::create_with(&state.paths, &name, &version, loader).map_err(err)
 }
 
 #[tauri::command]
@@ -169,6 +173,72 @@ fn set_memory(state: State<'_, Pristine>, id: String, mb: u32) -> CmdResult<()> 
     let mut i = Instance::load(&state.paths, &id).map_err(err)?;
     i.max_memory_mb = mb.clamp(512, 65536);
     i.save(&state.paths).map_err(err)
+}
+
+fn load_instance(state: &Pristine, id: &str) -> CmdResult<Instance> {
+    Instance::load(&state.paths, id).map_err(err)
+}
+
+#[tauri::command]
+fn list_modules() -> &'static [ModuleDef] { modules::MODULES }
+
+#[tauri::command]
+async fn enable_module(state: State<'_, Pristine>, id: String, module: String) -> CmdResult<ModuleReport> {
+    state.enable_module(&id, &module).await.map_err(err)
+}
+
+#[tauri::command]
+fn disable_module(state: State<'_, Pristine>, id: String, module: String) -> CmdResult<()> {
+    state.disable_module(&id, &module).map_err(err)
+}
+
+#[tauri::command]
+fn set_loader(state: State<'_, Pristine>, id: String, loader: Loader) -> CmdResult<()> {
+    state.set_loader(&id, loader).map_err(err)
+}
+
+#[tauri::command]
+async fn search_content(state: State<'_, Pristine>, params: SearchParams) -> CmdResult<SearchResult> {
+    state.search(&params).await.map_err(err)
+}
+
+#[tauri::command]
+async fn install_content(state: State<'_, Pristine>, id: String, project: String, kind: Kind, world: Option<String>) -> CmdResult<Vec<String>> {
+    state.install_content(&id, &project, kind, world.as_deref()).await.map_err(err)
+}
+
+/// Creates a new instance from a modpack. Progress is emitted under the id `__modpack`.
+#[tauri::command]
+async fn install_modpack(app: AppHandle, state: State<'_, Pristine>, project: String) -> CmdResult<Instance> {
+    state.install_modpack(&project, progress_emitter(app, "__modpack".into())).await.map_err(err)
+}
+
+#[tauri::command]
+fn list_content(state: State<'_, Pristine>, id: String) -> CmdResult<Vec<ContentView>> {
+    Ok(content::list(&state.paths, &load_instance(&state, &id)?))
+}
+
+#[tauri::command]
+fn list_worlds(state: State<'_, Pristine>, id: String) -> CmdResult<Vec<String>> {
+    Ok(content::list_worlds(&state.paths, &load_instance(&state, &id)?))
+}
+
+#[tauri::command]
+fn toggle_content(state: State<'_, Pristine>, id: String, file: String) -> CmdResult<()> {
+    content::toggle(&state.paths, &load_instance(&state, &id)?, &file).map_err(err)
+}
+
+#[tauri::command]
+fn remove_content(state: State<'_, Pristine>, id: String, file: String) -> CmdResult<()> {
+    content::remove(&state.paths, &load_instance(&state, &id)?, &file).map_err(err)
+}
+
+#[tauri::command]
+fn open_instance_folder(app: AppHandle, state: State<'_, Pristine>, id: String) -> CmdResult<()> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = state.paths.game_dir(&load_instance(&state, &id)?.id);
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    app.opener().open_path(dir.to_string_lossy(), None::<&str>).map_err(err)
 }
 
 #[tauri::command]
@@ -216,7 +286,9 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             app_info, accounts_state, get_client_id, set_client_id, select_account, remove_account,
             ms_login_start, ms_login_cancel, list_versions, list_instances, create_instance, delete_instance,
-            set_memory, install_instance, launch_instance
+            set_memory, install_instance, launch_instance,
+            list_modules, enable_module, disable_module, set_loader, search_content, install_content,
+            install_modpack, list_content, list_worlds, toggle_content, remove_content, open_instance_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pristine");

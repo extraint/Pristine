@@ -94,6 +94,7 @@ pub fn build_command(
     };
 
     let mut args = vec![format!("-Xmx{}M", instance.max_memory_mb), "-Xms512M".to_string()];
+    args.extend(crate::modules::jvm_flags(&instance.modules));
     args.extend(instance.extra_jvm_args.iter().cloned());
     args.extend(jvm_raw.iter().map(|a| substitute(a, &vars)));
     args.push(meta.main_class.clone());

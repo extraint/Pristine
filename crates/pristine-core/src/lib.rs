@@ -2,13 +2,18 @@
 
 pub mod accounts;
 pub mod auth;
+pub mod content;
 pub mod download;
 pub mod error;
 pub mod install;
 pub mod instance;
 pub mod java;
 pub mod launch;
+pub mod loader;
 pub mod manifest;
+pub mod modpack;
+pub mod modrinth;
+pub mod modules;
 pub mod msa;
 pub mod paths;
 
@@ -16,6 +21,7 @@ pub use auth::Account;
 pub use download::{Progress, ProgressFn};
 pub use error::{Error, Result};
 pub use instance::Instance;
+pub use loader::Loader;
 pub use launch::LaunchCommand;
 pub use paths::Paths;
 
@@ -106,10 +112,17 @@ impl Pristine {
         Ok(Account::microsoft(a.username, parsed, a.mc_token))
     }
 
-    /// Download the game, libraries, assets and a matching Java for an instance.
+    /// Vanilla metadata with the instance's loader merged in.
+    pub fn resolve_meta(&self, inst: &Instance) -> Result<manifest::VersionMeta> {
+        let vanilla = install::load_version_meta(&self.paths, &inst.mc_version)?;
+        loader::apply(&self.paths, inst, vanilla)
+    }
+
+    /// Download the game, loader, libraries, assets and a matching Java for an instance.
     pub async fn install_instance(&self, id: &str, progress: ProgressFn) -> Result<()> {
-        let inst = Instance::load(&self.paths, id)?;
+        let mut inst = Instance::load(&self.paths, id)?;
         let meta = install::install_version(&self.paths, &self.client, &inst.mc_version, &progress).await?;
+        loader::install(&self.paths, &self.client, &mut inst, &progress).await?;
         if inst.java_path.is_none() {
             java::ensure_java(&self.paths, &self.client, meta.java_major(), &progress).await?;
         }
@@ -119,13 +132,46 @@ impl Pristine {
     /// Build the launch command for an installed instance.
     pub async fn prepare_launch(&self, id: &str, account: &Account, progress: ProgressFn) -> Result<LaunchCommand> {
         let inst = Instance::load(&self.paths, id)?;
-        let meta = install::load_version_meta(&self.paths, &inst.mc_version)?;
+        let meta = self.resolve_meta(&inst)?;
         let java = match &inst.java_path {
             Some(p) => p.into(),
             None => java::ensure_java(&self.paths, &self.client, meta.java_major(), &progress).await?,
         };
         std::fs::create_dir_all(self.paths.game_dir(id))?;
         Ok(launch::build_command(&self.paths, &meta, &inst, java, account))
+    }
+
+    // ----- Modrinth & content -----
+
+    pub async fn search(&self, p: &modrinth::SearchParams) -> Result<modrinth::SearchResult> {
+        modrinth::search(&self.client, p).await
+    }
+
+    pub async fn install_content(
+        &self, id: &str, project: &str, kind: modrinth::Kind, world: Option<&str>,
+    ) -> Result<Vec<String>> {
+        let inst = Instance::load(&self.paths, id)?;
+        let opts = content::InstallOpts { world, module: None, explicit: true };
+        content::install_project(&self.paths, &self.client, &inst, project, kind, &opts).await
+    }
+
+    pub async fn install_modpack(&self, project: &str, progress: ProgressFn) -> Result<Instance> {
+        modpack::install_modpack(&self.paths, &self.client, project, &progress).await
+    }
+
+    pub async fn enable_module(&self, id: &str, module: &str) -> Result<modules::ModuleReport> {
+        let mut inst = Instance::load(&self.paths, id)?;
+        modules::enable(&self.paths, &self.client, &mut inst, module).await
+    }
+
+    pub fn disable_module(&self, id: &str, module: &str) -> Result<()> {
+        let mut inst = Instance::load(&self.paths, id)?;
+        modules::disable(&self.paths, &mut inst, module)
+    }
+
+    pub fn set_loader(&self, id: &str, new: Loader) -> Result<()> {
+        let mut inst = Instance::load(&self.paths, id)?;
+        loader::reset(&self.paths, &mut inst, new)
     }
 }
 

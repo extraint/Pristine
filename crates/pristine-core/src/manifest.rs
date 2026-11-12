@@ -123,6 +123,21 @@ pub struct Library {
     pub rules: Option<Vec<Rule>>,
     /// Legacy (pre-1.19) natives: maps OS name -> classifier.
     pub natives: Option<HashMap<String, String>>,
+    /// Maven-style libraries (Fabric/Quilt) carry a repository base URL instead of `downloads`.
+    pub url: Option<String>,
+    pub sha1: Option<String>,
+    pub size: Option<u64>,
+}
+
+/// `group:artifact:version[:classifier]` -> `group/artifact/version/artifact-version[-classifier].jar`
+pub fn maven_path(name: &str) -> Option<String> {
+    let mut p = name.split(':');
+    let (g, a, v) = (p.next()?, p.next()?, p.next()?);
+    let file = match p.next() {
+        Some(c) => format!("{a}-{v}-{c}.jar"),
+        None => format!("{a}-{v}.jar"),
+    };
+    Some(format!("{}/{a}/{v}/{file}", g.replace('.', "/")))
 }
 
 impl Library {
@@ -131,8 +146,18 @@ impl Library {
     }
 
     /// The jar that goes on the classpath, if any.
-    pub fn artifact(&self) -> Option<&Artifact> {
-        self.downloads.as_ref()?.artifact.as_ref()
+    pub fn artifact(&self) -> Option<Artifact> {
+        if let Some(d) = &self.downloads {
+            return d.artifact.clone();
+        }
+        let base = self.url.as_deref()?;
+        let path = maven_path(&self.name)?;
+        Some(Artifact {
+            url: format!("{}/{path}", base.trim_end_matches('/')),
+            path,
+            sha1: self.sha1.clone().unwrap_or_default(),
+            size: self.size.unwrap_or(0),
+        })
     }
 
     /// Legacy native jar to extract into the natives directory, if any.
@@ -203,7 +228,7 @@ pub fn rules_allow(rules: Option<&[Rule]>) -> bool {
 
 // ---------- arguments ----------
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Arguments {
     #[serde(default)]
     pub game: Vec<Argument>,
@@ -250,6 +275,13 @@ mod tests {
             os: os.map(|n| OsRule { name: Some(n.into()), arch: None }),
             features: None,
         }
+    }
+
+    #[test]
+    fn maven_paths() {
+        assert_eq!(maven_path("org.ow2.asm:asm:9.10.1").unwrap(), "org/ow2/asm/asm/9.10.1/asm-9.10.1.jar");
+        assert_eq!(maven_path("a.b:c:1:natives").unwrap(), "a/b/c/1/c-1-natives.jar");
+        assert!(maven_path("broken").is_none());
     }
 
     #[test]

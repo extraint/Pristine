@@ -45,23 +45,7 @@ pub async fn install_version(
     }).await?;
 
     // Libraries (+ legacy natives)
-    let mut jobs = Vec::new();
-    let mut native_jars = Vec::new();
-    for lib in meta.libraries.iter().filter(|l| l.is_allowed()) {
-        if let Some(a) = lib.artifact() {
-            jobs.push(Job {
-                url: a.url.clone(),
-                dest: paths.libraries().join(&a.path),
-                sha1: Some(a.sha1.clone()),
-            });
-        }
-        if let Some(a) = lib.native_artifact() {
-            let dest = paths.libraries().join(&a.path);
-            jobs.push(Job { url: a.url.clone(), dest: dest.clone(), sha1: Some(a.sha1.clone()) });
-            native_jars.push(dest);
-        }
-    }
-    download_all(client, jobs, "libraries", progress).await?;
+    let native_jars = download_libraries(paths, client, &meta.libraries, progress).await?;
 
     // Assets
     let index_path = paths.assets().join("indexes").join(format!("{}.json", meta.asset_index.id));
@@ -92,6 +76,33 @@ pub async fn install_version(
         extract_natives(&jar, &natives)?;
     }
     Ok(meta)
+}
+
+fn opt_hash(h: &str) -> Option<String> {
+    Some(h.to_string()).filter(|h| !h.is_empty())
+}
+
+/// Download every allowed library; returns legacy native jars to extract.
+pub async fn download_libraries(
+    paths: &Paths,
+    client: &reqwest::Client,
+    libs: &[Library],
+    progress: &ProgressFn,
+) -> Result<Vec<std::path::PathBuf>> {
+    let mut jobs = Vec::new();
+    let mut native_jars = Vec::new();
+    for lib in libs.iter().filter(|l| l.is_allowed()) {
+        if let Some(a) = lib.artifact() {
+            jobs.push(Job { url: a.url.clone(), dest: paths.libraries().join(&a.path), sha1: opt_hash(&a.sha1) });
+        }
+        if let Some(a) = lib.native_artifact() {
+            let dest = paths.libraries().join(&a.path);
+            jobs.push(Job { url: a.url.clone(), dest: dest.clone(), sha1: opt_hash(&a.sha1) });
+            native_jars.push(dest);
+        }
+    }
+    download_all(client, jobs, "libraries", progress).await?;
+    Ok(native_jars)
 }
 
 /// Extract shared libraries from a legacy natives jar, flattened into `dest`.

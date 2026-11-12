@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use crate::loader::Loader;
 use crate::paths::Paths;
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +15,13 @@ pub struct Instance {
     pub java_path: Option<String>,
     #[serde(default)]
     pub extra_jvm_args: Vec<String>,
+    #[serde(default)]
+    pub loader: Loader,
+    #[serde(default)]
+    pub loader_version: Option<String>,
+    /// Enabled client modules (see `modules`).
+    #[serde(default)]
+    pub modules: Vec<String>,
     /// Unix seconds of the last launch.
     #[serde(default)]
     pub last_played: Option<u64>,
@@ -33,6 +41,10 @@ pub fn slugify(name: &str) -> String {
 
 impl Instance {
     pub fn create(paths: &Paths, name: &str, mc_version: &str) -> Result<Instance> {
+        Self::create_with(paths, name, mc_version, Loader::Vanilla)
+    }
+
+    pub fn create_with(paths: &Paths, name: &str, mc_version: &str, loader: Loader) -> Result<Instance> {
         let base = slugify(name);
         let mut id = base.clone();
         let mut n = 2;
@@ -47,6 +59,9 @@ impl Instance {
             max_memory_mb: default_max_mem(),
             java_path: None,
             extra_jvm_args: vec![],
+            loader,
+            loader_version: None,
+            modules: vec![],
             last_played: None,
         };
         std::fs::create_dir_all(paths.game_dir(&inst.id))?;
