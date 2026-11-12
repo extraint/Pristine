@@ -1,3 +1,4 @@
 /target
 *.part
 .DS_Store
+crates/pristine-app/gen

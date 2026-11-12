@@ -1,0 +1,14 @@
+[package]
+name = "pristine-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+pristine-core = { path = "../pristine-core" }
+tauri = { version = "2", features = [] }
+serde.workspace = true
+serde_json.workspace = true

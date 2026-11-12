@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pristine</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">P</span> Pristine</div>
+    <nav>
+      <button class="nav active" data-view="instances">Instances</button>
+      <button class="nav" data-view="settings">Settings</button>
+    </nav>
+    <div class="sidebar-foot">
+      <label for="username">Offline username</label>
+      <input id="username" maxlength="16" spellcheck="false" placeholder="Player" />
+    </div>
+  </aside>
+
+  <main>
+    <section id="view-instances">
+      <header>
+        <h1>Instances</h1>
+        <button id="new-btn" class="primary">+ New instance</button>
+      </header>
+      <div id="grid" class="grid"></div>
+      <p id="empty" class="muted" hidden>No instances yet. Create one to get started.</p>
+    </section>
+
+    <section id="view-settings" hidden>
+      <header><h1>Settings</h1></header>
+      <p class="muted">Game files, Java runtimes and instances are stored in Pristine's data folder. Microsoft sign-in is coming soon; for now Pristine launches with an offline account.</p>
+    </section>
+  </main>
+
+  <dialog id="new-dialog">
+    <form method="dialog" id="new-form">
+      <h2>New instance</h2>
+      <label>Name <input id="new-name" required placeholder="My world" autocomplete="off" /></label>
+      <label>Minecraft version <select id="new-version"></select></label>
+      <label class="check"><input type="checkbox" id="show-snapshots" /> Show snapshots and pre-releases</label>
+      <p id="new-error" class="error" hidden></p>
+      <div class="actions">
+        <button type="button" id="new-cancel">Cancel</button>
+        <button type="submit" class="primary" id="new-create">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
