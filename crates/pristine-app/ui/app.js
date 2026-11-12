@@ -28,9 +28,12 @@ function busy(text) {
   return () => { $("busy").hidden = true; };
 }
 function hash(s) { let h = 5381; for (const c of String(s)) h = ((h << 5) + h + c.charCodeAt(0)) | 0; return Math.abs(h); }
+// A small curated palette keeps every instance colourful without muddy hues.
+const PALETTE = [["#0f766e", "#155e75"], ["#4338ca", "#6d28d9"], ["#be123c", "#9d174d"], ["#b45309", "#9a3412"],
+  ["#047857", "#0f766e"], ["#0369a1", "#4338ca"], ["#7e22ce", "#a21caf"], ["#475569", "#1e293b"]].map(([x, y]) => [x + "e6", y]);
 function gradient(seed) {
-  const h = hash(seed) % 360;
-  return `linear-gradient(135deg, hsl(${h} 72% 46%), hsl(${(h + 55) % 360} 70% 34%))`;
+  const [a, b] = PALETTE[hash(seed) % PALETTE.length];
+  return `linear-gradient(135deg, ${a}, ${b})`;
 }
 function ago(secs) {
   if (!secs) return "Never played";
