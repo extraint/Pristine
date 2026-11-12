@@ -31,6 +31,11 @@ function hash(s) { let h = 5381; for (const c of String(s)) h = ((h << 5) + h + 
 // A small curated palette keeps every instance colourful without muddy hues.
 const PALETTE = [["#0f766e", "#155e75"], ["#4338ca", "#6d28d9"], ["#be123c", "#9d174d"], ["#b45309", "#9a3412"],
   ["#047857", "#0f766e"], ["#0369a1", "#4338ca"], ["#7e22ce", "#a21caf"], ["#475569", "#1e293b"]].map(([x, y]) => [x + "e6", y]);
+function paletteFor(seed) { return PALETTE[hash(seed) % PALETTE.length]; }
+function setGlow(seed) {
+  const [a, b] = paletteFor(seed), g = $("glow");
+  g.style.setProperty("--g1", a); g.style.setProperty("--g2", b);
+}
 function gradient(seed) {
   const [a, b] = PALETTE[hash(seed) % PALETTE.length];
   return `linear-gradient(135deg, ${a}, ${b})`;
@@ -126,6 +131,7 @@ function go(view) {
 }
 function renderCurrent() {
   state.ctl.clear();
+  setGlow("pristine");
   ({ home: renderHome, library: renderLibrary, browse: renderBrowse, instance: renderInstance, settings: loadInfo })[state.view]();
 }
 document.querySelectorAll(".nav").forEach((b) => b.addEventListener("click", () => go(b.dataset.view)));
@@ -173,19 +179,18 @@ listen("game-exit", ({ payload: p }) => {
 
 // ---------- cards ----------
 function badgesFor(i) {
-  return [loaderLabel(i.loader), i.installed ? "Installed" : "Not installed", ...(i.modules.length ? [`${i.modules.length} module${i.modules.length > 1 ? "s" : ""}`] : [])]
+  return [loaderLabel(i.loader), ...(i.installed ? [] : ["Not installed"]), ...(i.modules.length ? [`${i.modules.length} module${i.modules.length > 1 ? "s" : ""}`] : [])]
     .map((t) => el("span", { className: "badge", textContent: t }));
 }
 function renderCard(i, n) {
-  const bar = el("i"), status = el("div", { className: "status" }), play = el("button", { className: "primary play" });
-  const banner = el("div", { className: "banner" }, el("div", { className: "badges" }, ...badgesFor(i)),
-    el("span", { className: "ver" + (i.mc_version.length > 8 ? " long" : ""), textContent: i.mc_version }));
-  banner.style.background = gradient(i.id);
-  const card = el("div", { className: "card", tabIndex: 0 }, banner,
-    el("div", { className: "body" },
-      el("div", {}, el("h3", { textContent: i.name, title: i.name }), el("div", { className: "meta", textContent: `${gb(i.max_memory_mb)} · ${ago(i.last_played)}` })),
-      el("div", { className: "bar" }, bar), status, play));
-  card.style.animationDelay = Math.min(n, 8) * 40 + "ms";
+  const bar = el("i"), status = el("div", { className: "status" }), play = el("button", { className: "play" });
+  status.dataset.meta = ago(i.last_played);
+  const card = el("div", { className: "card", tabIndex: 0 },
+    el("div", { className: "art", style: `background:${gradient(i.id)}` }, el("span", { className: "mono", textContent: i.name.trim()[0]?.toUpperCase() || "P" })),
+    el("div", { className: "badges" }, ...badgesFor(i), el("span", { className: "badge", textContent: i.mc_version })),
+    el("div", { className: "foot" }, el("div", { className: "txt" }, el("h3", { textContent: i.name, title: i.name }), status), play),
+    el("div", { className: "bar" }, bar));
+  card.style.animationDelay = Math.min(n, 8) * 45 + "ms";
   card.addEventListener("click", () => openInstance(i.id));
   card.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === card) openInstance(i.id); });
   controller(i, { bar, status, play });
@@ -208,7 +213,7 @@ async function renderHome() {
   $("greeting").textContent = `${h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"}, ${name}`;
   const byRecent = [...state.instances].sort((a, b) => (b.last_played || 0) - (a.last_played || 0));
   const hero = $("hero");
-  if (byRecent.length) hero.replaceChildren(renderHeroFor(byRecent[0]));
+  if (byRecent.length) { hero.replaceChildren(renderHeroFor(byRecent[0])); setGlow(byRecent[0].id); }
   else {
     const go1 = el("button", { className: "play", textContent: "Create an instance" });
     go1.addEventListener("click", openNew);
@@ -352,13 +357,14 @@ async function renderInstance() {
   state.content = await invoke("list_content", { id: i.id }).catch(() => []);
   if (state.view !== "instance") return;
 
+  setGlow(i.id);
   const back = el("button", { className: "back", textContent: "← Library" });
   back.addEventListener("click", () => go("library"));
   const bar = el("i"), status = el("div", { className: "status" }), play = el("button", { className: "play" });
   const head = el("div", { className: "ihead" },
     el("div", { className: "top" }, back),
     el("div", { className: "hrow" },
-      el("div", {}, el("h1", { textContent: i.name }), el("div", { className: "badges" }, ...badgesFor(i), el("span", { className: "badge", textContent: `MC ${i.mc_version}` }))),
+      el("div", {}, el("h1", { textContent: i.name }), el("div", { className: "badges" }, ...badgesFor(i), el("span", { className: "badge", textContent: `Minecraft ${i.mc_version}` }))),
       el("div", { className: "cta" }, play, el("div", { className: "bar" }, bar), status)));
   head.style.background = gradient(i.id);
   controller(i, { bar, status, play });
