@@ -28,6 +28,7 @@ impl Paths {
     pub fn assets(&self) -> PathBuf { self.root.join("assets") }
     pub fn versions(&self) -> PathBuf { self.root.join("versions") }
     pub fn runtimes(&self) -> PathBuf { self.root.join("runtimes") }
+    pub fn skins(&self) -> PathBuf { self.root.join("skins") }
     pub fn instances(&self) -> PathBuf { self.root.join("instances") }
     pub fn version_dir(&self, id: &str) -> PathBuf { self.versions().join(id) }
     pub fn version_json(&self, id: &str) -> PathBuf { self.version_dir(id).join(format!("{id}.json")) }

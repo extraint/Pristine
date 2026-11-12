@@ -110,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("created instance '{}' (id: {}, Minecraft {}, {})", i.name, i.id, i.mc_version, i.loader.label());
         }
         Cmd::Search { query, kind, mc } => {
-            let r = app.search(&SearchParams { query, kind: parse_kind(&kind)?, mc_version: mc, loader: None, offset: 0, index: None }).await?;
+            let r = app.search(&SearchParams { query, kind: parse_kind(&kind)?, mc_version: mc, loader: None, offset: 0, index: None, categories: vec![] }).await?;
             println!("{} results", r.total);
             for h in r.hits.iter().take(10) { println!("{:<28} {:>10} dl  {}", h.slug, h.downloads, h.title); }
         }

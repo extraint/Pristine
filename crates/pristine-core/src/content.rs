@@ -156,6 +156,7 @@ pub struct ContentView {
     pub title: String,
     pub icon_url: Option<String>,
     pub version_number: Option<String>,
+    pub project_id: Option<String>,
     pub managed: bool,
     pub modules: Vec<String>,
 }
@@ -175,6 +176,7 @@ pub fn list(paths: &Paths, inst: &Instance) -> Vec<ContentView> {
             title: e.title.clone(),
             icon_url: e.icon_url.clone(),
             version_number: Some(e.version_number.clone()),
+            project_id: Some(e.project_id.clone()),
             managed: true,
             modules: e.modules.clone(),
         })
@@ -190,7 +192,7 @@ pub fn list(paths: &Paths, inst: &Instance) -> Vec<ContentView> {
             if !(base.ends_with(".jar") || base.ends_with(".zip")) { continue; }
             out.push(ContentView {
                 file: rel, enabled: !is_disabled(&name), kind, title: base.to_string(), name,
-                icon_url: None, version_number: None, managed: false, modules: vec![],
+                icon_url: None, version_number: None, project_id: None, managed: false, modules: vec![],
             });
         }
     }

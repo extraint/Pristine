@@ -10,12 +10,14 @@ pub mod instance;
 pub mod java;
 pub mod launch;
 pub mod loader;
+pub mod logparse;
 pub mod manifest;
 pub mod modpack;
 pub mod modrinth;
 pub mod modules;
 pub mod msa;
 pub mod paths;
+pub mod skins;
 
 pub use auth::Account;
 pub use download::{Progress, ProgressFn};
@@ -157,6 +159,15 @@ impl Pristine {
 
     pub async fn install_modpack(&self, project: &str, progress: ProgressFn) -> Result<Instance> {
         modpack::install_modpack(&self.paths, &self.client, project, &progress).await
+    }
+
+    /// Upload a saved skin to the selected Microsoft account.
+    pub async fn apply_skin(&self, file: &str, slim: bool) -> Result<()> {
+        let store = AccountStore::load(&self.paths);
+        let uuid = store.selected.ok_or_else(|| Error::msg("Sign in with a Microsoft account to change your skin."))?;
+        let acct = self.launch_account(&uuid).await?;
+        let bytes = skins::read(&self.paths, file)?;
+        skins::apply(&self.client, &acct.access_token, bytes, slim).await
     }
 
     pub async fn enable_module(&self, id: &str, module: &str) -> Result<modules::ModuleReport> {

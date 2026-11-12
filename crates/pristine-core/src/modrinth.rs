@@ -41,6 +41,9 @@ pub struct SearchParams {
     pub offset: u32,
     /// relevance | downloads | follows | newest | updated
     pub index: Option<String>,
+    /// Modrinth category slugs; a project must match all of them.
+    #[serde(default)]
+    pub categories: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -150,6 +153,7 @@ fn facets(p: &SearchParams) -> String {
         },
         _ => {}
     }
+    for c in &p.categories { f.push(vec![format!("categories:{c}")]); }
     if let Some(v) = &p.mc_version { f.push(vec![format!("versions:{v}")]); }
     json!(f).to_string()
 }
@@ -201,7 +205,7 @@ mod tests {
     use super::*;
 
     fn p(kind: Kind, loader: Option<Loader>) -> SearchParams {
-        SearchParams { query: String::new(), kind, mc_version: Some("1.21.1".into()), loader, offset: 0, index: None }
+        SearchParams { query: String::new(), kind, mc_version: Some("1.21.1".into()), loader, offset: 0, index: None, categories: vec![] }
     }
 
     #[test]
@@ -212,6 +216,14 @@ mod tests {
             r#"[["project_type:mod"],["categories:datapack"],["versions:1.21.1"]]"#);
         assert_eq!(facets(&p(Kind::Shader, Some(Loader::Fabric))),
             r#"[["project_type:shader"],["versions:1.21.1"]]"#);
+    }
+
+    #[test]
+    fn category_facets_are_anded() {
+        let mut q = p(Kind::Mod, Some(Loader::Fabric));
+        q.categories = vec!["optimization".into(), "storage".into()];
+        assert_eq!(facets(&q),
+            r#"[["project_type:mod"],["categories:fabric"],["categories:optimization"],["categories:storage"],["versions:1.21.1"]]"#);
     }
 
     #[test]

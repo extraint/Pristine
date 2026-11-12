@@ -4,11 +4,10 @@ const { listen } = window.__TAURI__.event;
 const $ = (id) => document.getElementById(id);
 const state = {
   instances: [], modules: [], versions: [], latest: "", kind: "release", loader: "fabric",
-  view: "home", instId: null, tab: "mod", content: [], query: "",
-  busy: new Set(), running: new Set(), ctl: new Map(),
-  acct: { configured: false, selected: null, accounts: [] },
-  featured: null, seq: 0,
-  browse: { kind: "mod", target: null, offset: 0, total: 0, loading: false },
+  view: "home", instId: null, selected: null, tab: "mod", content: [], query: "",
+  busy: new Set(), running: new Set(), ctl: new Map(), notes: [], unread: 0,
+  acct: { configured: false, selected: null, accounts: [] }, featured: null,
+  logs: new Map(), logFilter: "all", logQuery: "",
 };
 if (/Mac/i.test(navigator.platform) || /Mac OS X/.test(navigator.userAgent)) document.documentElement.classList.add("mac");
 
@@ -22,23 +21,17 @@ function toast(msg, bad = false) {
   const t = $("toast");
   t.textContent = msg; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false;
   clearTimeout(toast.timer); toast.timer = setTimeout(() => (t.hidden = true), 5500);
+  state.notes.unshift({ msg, bad, at: new Date() }); state.notes.length = Math.min(state.notes.length, 50);
+  state.unread++; $("notif-dot").hidden = false;
+  if (typeof paintNotifs === "function") paintNotifs();
 }
-function busy(text) {
-  $("busy-text").textContent = text; $("busy").hidden = false;
-  return () => { $("busy").hidden = true; };
-}
-function hash(s) { let h = 5381; for (const c of String(s)) h = ((h << 5) + h + c.charCodeAt(0)) | 0; return Math.abs(h); }
-// A small curated palette keeps every instance colourful without muddy hues.
-const PALETTE = [["#0f766e", "#155e75"], ["#4338ca", "#6d28d9"], ["#be123c", "#9d174d"], ["#b45309", "#9a3412"],
-  ["#047857", "#0f766e"], ["#0369a1", "#4338ca"], ["#7e22ce", "#a21caf"], ["#475569", "#1e293b"]].map(([x, y]) => [x + "e6", y]);
-function paletteFor(seed) { return PALETTE[hash(seed) % PALETTE.length]; }
+function busy(text) { $("busy-text").textContent = text; $("busy").hidden = false; return () => { $("busy").hidden = true; }; }
+const PALETTE = [["#6366f1", "#a855f7"], ["#0ea5e9", "#6366f1"], ["#ec4899", "#f97316"], ["#10b981", "#0ea5e9"], ["#8b5cf6", "#ec4899"], ["#f59e0b", "#ef4444"]];
+function gradient(seed) { const [a, b] = PALETTE[hash(seed) % PALETTE.length]; return `linear-gradient(135deg, ${a}, ${b})`; }
 function setGlow(seed) {
-  const [a, b] = paletteFor(seed), g = $("glow");
-  g.style.setProperty("--g1", a); g.style.setProperty("--g2", b);
-}
-function gradient(seed) {
-  const [a, b] = PALETTE[hash(seed) % PALETTE.length];
-  return `linear-gradient(135deg, ${a}, ${b})`;
+  const bg = $("bg");
+  if (!seed || !matchMedia("(prefers-color-scheme: dark)").matches) { bg.style.removeProperty("--g1"); bg.style.removeProperty("--g2"); return; }
+  const [a, b] = PALETTE[hash(seed) % PALETTE.length]; bg.style.setProperty("--g1", a); bg.style.setProperty("--g2", b);
 }
 function ago(secs) {
   if (!secs) return "Never played";
@@ -48,8 +41,9 @@ function ago(secs) {
 }
 const gb = (mb) => (mb / 1024).toFixed(mb % 1024 ? 1 : 0) + " GB";
 const compact = new Intl.NumberFormat(undefined, { notation: "compact" });
-const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 const loaderLabel = (l) => ({ vanilla: "Vanilla", fabric: "Fabric", quilt: "Quilt" }[l] || l);
+const vname = (i) => (i.loader === "vanilla" ? i.mc_version : `${i.mc_version} ${loaderLabel(i.loader)}`);
+const inst = (id) => state.instances.find((i) => i.id === id);
 function projectIcon(url, title, cls = "icon") {
   const ph = () => { const d = el("div", { className: cls + " ph", textContent: (title || "?")[0].toUpperCase() }); d.style.background = gradient(title); return d; };
   if (!url) return ph();
@@ -57,22 +51,20 @@ function projectIcon(url, title, cls = "icon") {
   img.addEventListener("error", () => img.replaceWith(ph()));
   return img;
 }
-const inst = (id) => state.instances.find((i) => i.id === id);
+function art(seed, mode = "card") { return el("div", { className: "art", innerHTML: sceneSVG(seed, mode) }); }
 
 // ---------- accounts ----------
 let offlineName = "Player";
 try { offlineName = localStorage.getItem("username") || "Player"; } catch {}
-
 function currentAccount() {
   const sel = state.acct.accounts.find((x) => x.uuid === state.acct.selected);
-  return sel ? { name: sel.username, kind: "Microsoft account", seed: sel.uuid } : { name: offlineName.trim() || "Player", kind: "Offline account", seed: offlineName };
+  return sel ? { name: sel.username, kind: "Microsoft account", seed: sel.uuid, online: true } : { name: offlineName.trim() || "Player", kind: "Offline account", seed: offlineName, online: false };
 }
-function avatar(name, seed, node = el("div", { className: "avatar" })) {
-  node.textContent = (name.trim()[0] || "P").toUpperCase(); node.style.background = gradient(seed || name); return node;
-}
+function pix(seed, cls = "pix") { return el("img", { className: cls, src: pixelAvatar(seed), alt: "" }); }
 function paintAccount() {
   const a = currentAccount();
-  $("acct-name").textContent = a.name; $("acct-kind").textContent = a.kind; avatar(a.name, a.seed, $("avatar"));
+  $("avatar").src = pixelAvatar(a.seed); $("account-btn").title = `${a.name} · ${a.kind}`;
+  if (typeof paintSocial === "function") paintSocial();
 }
 async function loadAccounts() { state.acct = await invoke("accounts_state"); paintAccount(); }
 
@@ -83,15 +75,15 @@ function renderAccountList() {
   off.addEventListener("click", (e) => e.stopPropagation());
   const offRadio = el("input", { type: "radio", name: "acct", checked: !selected });
   offRadio.addEventListener("change", async () => { await invoke("select_account", { uuid: null }); await loadAccounts(); renderAccountList(); });
-  rows.push(el("label", { className: "acct" + (!selected ? " on" : "") }, offRadio, avatar(offlineName, offlineName),
-    el("div", { className: "who" }, off, el("small", { textContent: "Offline · can't join online servers" }))));
+  rows.push(el("label", { className: "acct" + (!selected ? " on" : "") }, offRadio, pix(offlineName),
+    el("div", { className: "who2" }, off, el("small", { textContent: "Offline · can't join online servers" }))));
   for (const a of accounts) {
     const radio = el("input", { type: "radio", name: "acct", checked: selected === a.uuid });
     const rm = el("button", { className: "x", type: "button", textContent: "Remove" });
     rm.addEventListener("click", async (e) => { e.preventDefault(); e.stopPropagation(); await invoke("remove_account", { uuid: a.uuid }); await loadAccounts(); renderAccountList(); });
     radio.addEventListener("change", async () => { await invoke("select_account", { uuid: a.uuid }); await loadAccounts(); renderAccountList(); });
-    rows.push(el("label", { className: "acct" + (selected === a.uuid ? " on" : "") }, radio, avatar(a.username, a.uuid),
-      el("div", { className: "who" }, el("strong", { textContent: a.username }), el("small", { textContent: "Microsoft account" })), rm));
+    rows.push(el("label", { className: "acct" + (selected === a.uuid ? " on" : "") }, radio, pix(a.uuid),
+      el("div", { className: "who2" }, el("strong", { textContent: a.username }), el("small", { textContent: "Microsoft account" })), rm));
   }
   $("acct-list").replaceChildren(...rows);
 }
@@ -120,34 +112,35 @@ listen("ms-login", async ({ payload: p }) => {
 });
 
 // ---------- navigation ----------
-const VIEWS = ["home", "library", "browse", "instance", "settings"];
+const VIEWS = ["home", "versions", "browse", "wardrobe", "instance", "settings"];
 function go(view) {
   state.view = view;
+  document.body.dataset.view = view;
   VIEWS.forEach((v) => ($("view-" + v).hidden = v !== view));
-  const navView = view === "instance" ? "library" : view;
+  const navView = view === "instance" ? "versions" : view;
   document.querySelectorAll(".nav").forEach((n) => n.classList.toggle("active", n.dataset.view === navView));
   $("main").scrollTop = 0;
+  if (typeof closePanels === "function") closePanels();
   renderCurrent();
 }
 function renderCurrent() {
   state.ctl.clear();
-  setGlow("pristine");
-  ({ home: renderHome, library: renderLibrary, browse: renderBrowse, instance: renderInstance, settings: loadInfo })[state.view]();
+  setGlow(null);
+  ({ home: renderHome, versions: renderVersions, browse: renderBrowse, wardrobe: renderWardrobe, instance: renderInstance, settings: loadInfo })[state.view]();
 }
 document.querySelectorAll(".nav").forEach((b) => b.addEventListener("click", () => go(b.dataset.view)));
+$("btn-settings").addEventListener("click", () => go("settings"));
 function openInstance(id, tab = "mod") { state.instId = id; state.tab = tab; go("instance"); }
+async function refresh() { state.instances = await invoke("list_instances"); renderCurrent(); }
 
-async function refresh() {
-  state.instances = await invoke("list_instances");
-  renderCurrent();
-}
-
-// ---------- play controller (shared by hero, cards, instance header) ----------
-function controller(i, { bar, status, play }) {
+// ---------- play controller ----------
+function controller(i, { bar, status, play, stop }) {
   const sync = () => {
     const running = state.running.has(i.id), working = state.busy.has(i.id);
     play.disabled = working || running;
-    play.textContent = running ? "Running…" : working ? "Working…" : i.installed ? "Play" : "Install & play";
+    play.classList.toggle("running", running);
+    play.textContent = running ? "Running" : working ? "Working…" : i.installed ? "Play" : "Install & play";
+    if (stop) stop.hidden = !running;
     if (running) status.textContent = "Game is running";
   };
   play.addEventListener("click", async (e) => {
@@ -156,10 +149,12 @@ function controller(i, { bar, status, play }) {
     try {
       await invoke("launch_instance", { id: i.id, username: offlineName });
       state.running.add(i.id); i.installed = true; status.textContent = "Game is running";
+      state.logs.set(i.id, []);
     } catch (err) { toast(String(err), true); status.textContent = ""; }
     finally { state.busy.delete(i.id); bar.style.width = "0"; sync(); }
   });
-  const c = { bar, status, play, sync };
+  if (stop) stop.addEventListener("click", (e) => { e.stopPropagation(); invoke("stop_instance", { id: i.id }).catch((err) => toast(String(err), true)); });
+  const c = { bar, status, play, stop, sync };
   if (!state.ctl.has(i.id)) state.ctl.set(i.id, new Set());
   state.ctl.get(i.id).add(c);
   sync();
@@ -176,8 +171,14 @@ listen("game-exit", ({ payload: p }) => {
   if (p.code) toast(`Game exited with code ${p.code}`, true);
   refresh().catch(() => {});
 });
+listen("game-log", ({ payload: p }) => {
+  const buf = state.logs.get(p.id) || []; buf.push(...p.lines);
+  if (buf.length > 5000) buf.splice(0, buf.length - 5000);
+  state.logs.set(p.id, buf);
+  if (state.view === "instance" && state.tab === "log" && state.instId === p.id) appendLog(p.lines);
+});
 
-// ---------- cards ----------
+// ---------- cards & home ----------
 function badgesFor(i) {
   return [loaderLabel(i.loader), ...(i.installed ? [] : ["Not installed"]), ...(i.modules.length ? [`${i.modules.length} module${i.modules.length > 1 ? "s" : ""}`] : [])]
     .map((t) => el("span", { className: "badge", textContent: t }));
@@ -185,8 +186,7 @@ function badgesFor(i) {
 function renderCard(i, n) {
   const bar = el("i"), status = el("div", { className: "status" }), play = el("button", { className: "play" });
   status.dataset.meta = ago(i.last_played);
-  const card = el("div", { className: "card", tabIndex: 0 },
-    el("div", { className: "art", style: `background:${gradient(i.id)}` }, el("span", { className: "mono", textContent: i.name.trim()[0]?.toUpperCase() || "P" })),
+  const card = el("div", { className: "card", tabIndex: 0 }, art(i.id),
     el("div", { className: "badges" }, ...badgesFor(i), el("span", { className: "badge", textContent: i.mc_version })),
     el("div", { className: "foot" }, el("div", { className: "txt" }, el("h3", { textContent: i.name, title: i.name }), status), play),
     el("div", { className: "bar" }, bar));
@@ -196,178 +196,97 @@ function renderCard(i, n) {
   controller(i, { bar, status, play });
   return card;
 }
-function renderHeroFor(i) {
-  const bar = el("i"), status = el("div", { className: "status" }), play = el("button", { className: "play" });
-  const hero = el("div", { className: "hero" },
-    el("div", {}, el("div", { className: "eyebrow", textContent: "Jump back in" }), el("h2", { textContent: i.name }),
-      el("div", { className: "sub", textContent: `${loaderLabel(i.loader)} ${i.mc_version} · ${ago(i.last_played)}` })),
-    el("div", { className: "cta" }, play, el("div", { className: "bar" }, bar), status));
-  hero.style.background = gradient(i.id);
-  controller(i, { bar, status, play });
-  return hero;
-}
 
-// ---------- home ----------
 async function renderHome() {
-  const h = new Date().getHours(), name = currentAccount().name;
-  $("greeting").textContent = `${h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"}, ${name}`;
+  const sec = $("view-home");
   const byRecent = [...state.instances].sort((a, b) => (b.last_played || 0) - (a.last_played || 0));
-  const hero = $("hero");
-  if (byRecent.length) { hero.replaceChildren(renderHeroFor(byRecent[0])); setGlow(byRecent[0].id); }
-  else {
-    const go1 = el("button", { className: "play", textContent: "Create an instance" });
-    go1.addEventListener("click", openNew);
-    const c = el("div", { className: "hero" }, el("div", {}, el("div", { className: "eyebrow", textContent: "Get started" }),
-      el("h2", { textContent: "Welcome to Pristine" }), el("div", { className: "sub", textContent: "Create an instance or install a modpack to start playing." })),
-      el("div", { className: "cta" }, go1));
-    c.style.background = gradient("pristine"); hero.replaceChildren(c);
-  }
-  const rest = byRecent.slice(1, 4);
-  $("recent-title").hidden = !rest.length;
-  $("recent").replaceChildren(...rest.map(renderCard));
+  const sel = inst(state.selected) || byRecent[0] || null;
+  state.selected = sel ? sel.id : null;
+  const bar = el("i"), status = el("div", { className: "status" }), play = el("button", { className: "play" }), stop = el("button", { className: "stop", textContent: "Stop" });
+  stop.hidden = true;
+  const info = sel
+    ? el("div", {}, el("h1", { textContent: vname(sel) }), el("div", { className: "sub", textContent: `Pristine · ${sel.name}` }))
+    : el("div", {}, el("h1", { textContent: "Welcome" }), el("div", { className: "sub", textContent: "Create a version or install a modpack to start playing." }));
+  let cta;
+  if (sel) { controller(sel, { bar, status, play, stop }); cta = el("div", { className: "cta" }, el("div", { className: "btns" }, play, stop), el("div", { className: "bar" }, bar), status); }
+  else { const b = el("button", { className: "play", textContent: "Create a version" }); b.addEventListener("click", openNew); cta = el("div", { className: "cta" }, b); }
+
+  const stage = el("div", { className: "stage" }, el("div", { className: "art", innerHTML: sceneSVG(sel ? sel.id : "pristine", "wide") }),
+    el("div", { className: "stage-info" }, el("div", { className: "wrap" }, info, cta)));
+
+  const cards = byRecent.slice(0, 5).map((i) => {
+    const c = el("button", { className: "vcard" + (sel && i.id === sel.id ? " sel" : ""), title: i.name }, art(i.id),
+      el("div", { className: "lab" }, el("strong", { textContent: vname(i) }), el("span", { textContent: i.name })));
+    c.addEventListener("click", () => { state.selected = i.id; renderCurrent(); });
+    return c;
+  });
+  const grid = el("button", { className: "gridbtn", title: "All versions", ariaLabel: "All versions", innerHTML: '<svg viewBox="0 0 24 24"><path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z"/></svg>' });
+  grid.addEventListener("click", () => go("versions"));
+  const row = el("div", { className: "vrow" }, ...cards, ...(cards.length ? [grid] : []));
+
+  const featured = el("div", { className: "featured" }, el("div", { className: "muted", textContent: "Loading…" }));
+  sec.replaceChildren(stage, el("div", { className: "wrap" }, row, el("h2", { className: "sect", textContent: "Popular modpacks" }), featured));
 
   if (!state.featured) {
     try {
-      const r = await invoke("search_content", { params: { query: "", kind: "modpack", loader: "fabric", offset: 0, index: "downloads" } });
+      const r = await invoke("search_content", { params: { query: "", kind: "modpack", loader: "fabric", offset: 0, index: "downloads", categories: [] } });
       state.featured = r.hits.slice(0, 6);
     } catch { state.featured = []; }
   }
   if (state.view !== "home") return;
-  $("featured").replaceChildren(...(state.featured.length ? state.featured.map((p) => {
+  featured.replaceChildren(...(state.featured.length ? state.featured.map((p) => {
     const btn = el("button", { textContent: "Install" });
     btn.addEventListener("click", () => installModpack(p, btn));
     return el("div", { className: "pack" }, projectIcon(p.icon_url, p.title),
       el("div", { className: "txt" }, el("strong", { textContent: p.title }), el("small", { textContent: `${compact.format(p.downloads)} downloads · ${p.author}` })), btn);
   }) : [el("div", { className: "muted", textContent: "Couldn't reach Modrinth. Check your connection." })]));
 }
-$("home-new").addEventListener("click", openNew);
 
-// ---------- library ----------
-function renderLibrary() {
+function renderVersions() {
   const q = state.query.trim().toLowerCase(), all = state.instances;
-  const list = q ? all.filter((i) => (i.name + " " + i.mc_version + " " + i.loader).toLowerCase().includes(q)) : all;
+  const list = q ? all.filter((i) => (i.name + " " + vname(i)).toLowerCase().includes(q)) : all;
   $("empty").hidden = all.length > 0;
   $("no-match").hidden = !(all.length && !list.length);
-  $("lib-sub").textContent = all.length ? `${all.length} instance${all.length === 1 ? "" : "s"}` : "";
-  document.querySelector("#view-library .tools").hidden = !all.length;
+  $("ver-sub").textContent = all.length ? `${all.length} version${all.length === 1 ? "" : "s"}` : "";
+  document.querySelector("#view-versions .tools").hidden = !all.length;
   $("grid").replaceChildren(...list.map(renderCard));
 }
-$("search").addEventListener("input", (e) => { state.query = e.target.value; renderLibrary(); });
-$("empty-new").addEventListener("click", openNew);
-$("empty-browse").addEventListener("click", () => { state.browse.kind = "modpack"; go("browse"); });
+$("search").addEventListener("input", (e) => { state.query = e.target.value; renderVersions(); });
+$("empty-new").addEventListener("click", () => openNew());
+$("empty-browse").addEventListener("click", () => { browse.kind = "modpack"; go("browse"); });
 
-// ---------- modpacks ----------
 async function installModpack(p, btn) {
   const end = busy("Installing modpack…");
   if (btn) btn.disabled = true;
   try {
     const i = await invoke("install_modpack", { project: p.slug });
     await refresh();
-    toast(`Created "${i.name}" — press Play to download the game and start`);
+    toast(`Created "${i.name}". Press Play to download the game and start.`);
     openInstance(i.id, "mod");
   } catch (e) { toast(String(e), true); if (btn) btn.disabled = false; }
   finally { end(); }
 }
 
-// ---------- browse ----------
-const KINDS = [["mod", "Mods"], ["modpack", "Modpacks"], ["resourcepack", "Resource packs"], ["shader", "Shaders"], ["datapack", "Data packs"]];
-function renderBrowse() {
-  const b = state.browse;
-  $("kinds").replaceChildren(...KINDS.map(([k, label]) => {
-    const btn = el("button", { textContent: label, className: b.kind === k ? "on" : "" });
-    btn.addEventListener("click", () => { b.kind = k; renderBrowse(); });
-    return btn;
-  }));
-  const target = $("target"), cur = b.target && inst(b.target) ? b.target : state.instances[0]?.id;
-  b.target = cur || null;
-  target.replaceChildren(...state.instances.map((i) => el("option", { value: i.id, textContent: `${i.name} (${loaderLabel(i.loader)} ${i.mc_version})`, selected: i.id === cur })));
-  $("target-row").hidden = b.kind === "modpack";
-  runSearch(true);
-}
-$("target").addEventListener("change", (e) => { state.browse.target = e.target.value; runSearch(true); });
-$("compat").addEventListener("change", () => runSearch(true));
-$("sort").addEventListener("change", () => runSearch(true));
-let qTimer;
-$("q").addEventListener("input", () => { clearTimeout(qTimer); qTimer = setTimeout(() => runSearch(true), 300); });
-$("more").addEventListener("click", () => runSearch(false));
-
-async function runSearch(reset) {
-  const b = state.browse, mine = ++state.seq;
-  if (reset) { b.offset = 0; $("results").replaceChildren(el("p", { className: "muted center", textContent: "Searching…" })); }
-  const i = b.target ? inst(b.target) : null, compat = $("compat").checked && i && b.kind !== "modpack";
-  let r;
-  try {
-    r = await invoke("search_content", { params: {
-      query: $("q").value.trim(), kind: b.kind, offset: b.offset, index: $("sort").value,
-      mc_version: compat ? i.mc_version : null,
-      loader: compat && b.kind === "mod" && i.loader !== "vanilla" ? i.loader : null,
-    } });
-  } catch (e) { if (mine === state.seq) $("results").replaceChildren(el("p", { className: "muted center", textContent: "Couldn't reach Modrinth: " + e })); return; }
-  if (mine !== state.seq) return;
-  const rows = r.hits.map(renderHit);
-  if (reset) $("results").replaceChildren(...(rows.length ? rows : [el("p", { className: "muted center", textContent: "Nothing found." })]));
-  else $("results").append(...rows);
-  b.offset += r.hits.length; b.total = r.total;
-  $("more").hidden = b.offset >= r.total || !r.hits.length;
-}
-
-function renderHit(h) {
-  const b = state.browse, btn = el("button", { className: "primary", textContent: b.kind === "modpack" ? "Install" : "Add" });
-  btn.addEventListener("click", () => (b.kind === "modpack" ? installModpack(h, btn) : installHit(h, btn)));
-  return el("div", { className: "hit" }, projectIcon(h.icon_url, h.title),
-    el("div", { className: "txt" },
-      el("div", { className: "t" }, el("strong", { textContent: h.title }), el("span", { textContent: "by " + h.author })),
-      el("p", { textContent: h.description }),
-      el("div", { className: "stats" }, el("span", { textContent: compact.format(h.downloads) + " downloads" }),
-        ...h.categories.slice(0, 4).map((c) => el("span", { className: "tag", textContent: c })))), btn);
-}
-
-function pickWorld(id) {
-  return new Promise(async (resolve) => {
-    const worlds = await invoke("list_worlds", { id }).catch(() => []);
-    if (!worlds.length) { toast("This instance has no worlds yet. Launch the game and create one first.", true); return resolve(null); }
-    $("world-select").replaceChildren(...worlds.map((w) => el("option", { value: w, textContent: w })));
-    const d = $("world-dialog"), done = (v) => { d.close(); resolve(v); };
-    $("world-ok").onclick = () => done($("world-select").value);
-    $("world-cancel").onclick = () => done(null);
-    d.addEventListener("cancel", () => resolve(null), { once: true });
-    d.showModal();
-  });
-}
-async function installHit(h, btn) {
-  const id = state.browse.target, kind = state.browse.kind;
-  if (!id) return toast("Create an instance first", true);
-  let world = null;
-  if (kind === "datapack") { world = await pickWorld(id); if (!world) return; }
-  btn.disabled = true; btn.textContent = "Adding…";
-  try {
-    const names = await invoke("install_content", { id, project: h.slug, kind, world });
-    btn.textContent = names.length ? "Added ✓" : "Already added";
-    toast(names.length ? `Added ${names.join(", ")} to ${inst(id).name}` : `${h.title} is already in ${inst(id).name}`);
-  } catch (e) { toast(String(e), true); btn.disabled = false; btn.textContent = "Add"; }
-}
-
-// ---------- instance page ----------
-const TABS = [["mod", "Mods", "mods"], ["resourcepack", "Resource packs", "resourcepacks"], ["shader", "Shaders", "shaders"], ["datapack", "Data packs", "datapacks"], ["modules", "Modules", "modules"], ["settings", "Settings", "settings"]];
+// ---------- version page ----------
+const TABS = [["mod", "Mods"], ["resourcepack", "Textures"], ["shader", "Shaders"], ["datapack", "Data packs"], ["modules", "Modules"], ["log", "Live log"], ["settings", "Settings"]];
 
 async function renderInstance() {
   const i = inst(state.instId);
-  if (!i) return go("library");
+  if (!i) return go("versions");
+  setGlow(i.id);
   const sec = $("view-instance");
   state.content = await invoke("list_content", { id: i.id }).catch(() => []);
   if (state.view !== "instance") return;
 
-  setGlow(i.id);
-  const back = el("button", { className: "back", textContent: "← Library" });
-  back.addEventListener("click", () => go("library"));
-  const bar = el("i"), status = el("div", { className: "status" }), play = el("button", { className: "play" });
-  const head = el("div", { className: "ihead" },
-    el("div", { className: "top" }, back),
+  const back = el("button", { className: "back", textContent: "← Versions" });
+  back.addEventListener("click", () => go("versions"));
+  const bar = el("i"), status = el("div", { className: "status" }), play = el("button", { className: "play" }), stop = el("button", { className: "stop", textContent: "Stop" });
+  stop.hidden = true;
+  const head = el("div", { className: "ihead" }, art(i.id, "banner"), back,
     el("div", { className: "hrow" },
       el("div", {}, el("h1", { textContent: i.name }), el("div", { className: "badges" }, ...badgesFor(i), el("span", { className: "badge", textContent: `Minecraft ${i.mc_version}` }))),
-      el("div", { className: "cta" }, play, el("div", { className: "bar" }, bar), status)));
-  head.style.background = gradient(i.id);
-  controller(i, { bar, status, play });
+      el("div", { className: "cta" }, el("div", { className: "btns" }, play, stop), el("div", { className: "bar" }, bar), status)));
+  controller(i, { bar, status, play, stop });
 
   const tabs = el("div", { className: "tabs", role: "tablist" }, ...TABS.map(([key, label]) => {
     const n = state.content.filter((c) => c.kind === key).length;
@@ -376,9 +295,10 @@ async function renderInstance() {
     return b;
   }));
   const body = el("div");
-  sec.replaceChildren(head, tabs, body);
+  sec.replaceChildren(el("div", { className: "wrap" }, head, el("div", { style: "height:22px" }), tabs, body));
   if (state.tab === "modules") renderModules(body, i);
   else if (state.tab === "settings") renderInstSettings(body, i);
+  else if (state.tab === "log") renderLog(body, i);
   else renderContentTab(body, i, state.tab);
 }
 
@@ -388,19 +308,17 @@ function renderContentTab(body, i, kind) {
   if (kind === "mod" && i.loader === "vanilla") {
     const b = el("button", { className: "primary", textContent: "Switch to Fabric" });
     b.addEventListener("click", async () => { await invoke("set_loader", { id: i.id, loader: "fabric" }); await refresh(); toast("Now using Fabric. Press Play to install it."); });
-    body.append(el("div", { className: "notice" }, el("span", { textContent: "Mods need Fabric or Quilt. This instance is vanilla." }), b));
+    body.append(el("div", { className: "notice" }, el("span", { textContent: "Mods need Fabric or Quilt. This version is vanilla." }), b));
   }
   const add = el("button", { className: "primary", textContent: `Add ${label}` });
-  add.addEventListener("click", () => { state.browse.kind = kind; state.browse.target = i.id; go("browse"); });
+  add.addEventListener("click", () => { browse.kind = kind; browse.target = i.id; browse.page = 0; browse.cats.clear(); go("browse"); });
   if (!items.length) {
     body.append(el("div", { className: "empty" }, el("h2", { textContent: `No ${label} yet` }), el("p", { className: "muted", textContent: "Find some on Modrinth, or turn on a module." }), add));
     return;
   }
   const list = el("div", { className: "list" }, ...items.map((c) => {
     const sw = el("input", { type: "checkbox", checked: c.enabled, ariaLabel: "Enabled" });
-    sw.addEventListener("change", async () => {
-      try { await invoke("toggle_content", { id: i.id, file: c.file }); renderInstance(); } catch (e) { toast(String(e), true); sw.checked = !sw.checked; }
-    });
+    sw.addEventListener("change", async () => { try { await invoke("toggle_content", { id: i.id, file: c.file }); renderInstance(); } catch (e) { toast(String(e), true); sw.checked = !sw.checked; } });
     const rm = el("button", { className: "ghost danger", textContent: "Remove" });
     rm.addEventListener("click", async () => {
       if (!confirm(`Remove ${c.title}?`)) return;
@@ -411,11 +329,10 @@ function renderContentTab(body, i, kind) {
       el("div", { className: "txt" }, el("strong", { textContent: c.title }),
         el("small", {}, c.version_number || (c.managed ? "" : "Added manually"),
           ...(world ? [el("span", { className: "tag", textContent: "World: " + world })] : []),
-          ...c.modules.map((m) => el("span", { className: "tag", textContent: state.modules.find((x) => x.id === m)?.name || m })))),
+          ...c.modules.map((m) => el("span", { className: "tag accent", textContent: state.modules.find((x) => x.id === m)?.name || m })))),
       el("label", { className: "switch" }, sw, el("span")), rm);
   }));
-  body.append(el("div", { className: "actions" }, add), list);
-  list.style.marginTop = "14px";
+  body.append(el("div", { className: "actions", style: "margin-bottom:14px" }, add), list);
 }
 
 function renderModules(body, i) {
@@ -460,11 +377,11 @@ function renderInstSettings(body, i) {
   mem.addEventListener("change", async () => { try { await invoke("set_memory", { id: i.id, mb: +mem.value }); i.max_memory_mb = +mem.value; } catch (e) { toast(String(e), true); } });
   const open = el("button", { textContent: "Open game folder" });
   open.addEventListener("click", () => invoke("open_instance_folder", { id: i.id }).catch((e) => toast(String(e), true)));
-  const del = el("button", { className: "danger", textContent: "Delete instance" });
+  const del = el("button", { className: "danger", textContent: "Delete version" });
   del.addEventListener("click", async () => {
-    if (state.running.has(i.id)) return toast("Close the game before deleting this instance", true);
+    if (state.running.has(i.id)) return toast("Close the game before deleting this version", true);
     if (!confirm(`Delete "${i.name}" and all its worlds and settings? This can't be undone.`)) return;
-    try { await invoke("delete_instance", { id: i.id }); await refresh(); go("library"); } catch (e) { toast(String(e), true); }
+    try { await invoke("delete_instance", { id: i.id }); await refresh(); go("versions"); } catch (e) { toast(String(e), true); }
   });
   body.append(el("div", { className: "settings-grid" },
     el("div", { className: "panel" }, el("strong", { textContent: "Mod loader" }), seg, el("small", { className: "muted", textContent: `Minecraft ${i.mc_version}${i.loader_version ? ` · ${loaderLabel(i.loader)} ${i.loader_version}` : ""}` })),
@@ -472,7 +389,52 @@ function renderInstSettings(body, i) {
     el("div", { className: "panel" }, el("div", { className: "actions" }, open, del))));
 }
 
-// ---------- new instance ----------
+// ---------- live log ----------
+const LOG_LEVELS = [["all", "All"], ["error", "Errors"], ["warn", "Warnings"], ["info", "Info"], ["debug", "Debug"]];
+const MAX_ROWS = 1500;
+let logEls = null;
+
+function logRow(l) {
+  return el("div", { className: "ln " + l.level }, el("span", { className: "n", textContent: l.n }), el("span", { className: "t", textContent: l.ts || "" }), el("span", { className: "x", textContent: l.text }));
+}
+const logMatch = (l) => (state.logFilter === "all" || l.level === state.logFilter) && (!state.logQuery || l.text.toLowerCase().includes(state.logQuery.toLowerCase()));
+
+async function renderLog(body, i) {
+  if (!state.logs.has(i.id) || !state.logs.get(i.id).length) state.logs.set(i.id, await invoke("get_log", { id: i.id }).catch(() => []));
+  const q = el("input", { type: "search", placeholder: "Search log", value: state.logQuery, spellcheck: false });
+  const pills = el("div", { className: "pills" });
+  const con = el("div", { className: "console" });
+  const paint = () => {
+    pills.replaceChildren(...LOG_LEVELS.map(([k, label]) => {
+      const n = k === "all" ? 0 : (state.logs.get(i.id) || []).filter((l) => l.level === k).length;
+      const b = el("button", { className: (state.logFilter === k ? "on " : "") + k, textContent: label + (n && (k === "error" || k === "warn") ? ` ${n}` : "") });
+      b.addEventListener("click", () => { state.logFilter = k; paint(); });
+      return b;
+    }));
+    const rows = (state.logs.get(i.id) || []).filter(logMatch).slice(-MAX_ROWS);
+    con.replaceChildren(...(rows.length ? rows.map(logRow) : [el("div", { className: "none", textContent: (state.logs.get(i.id) || []).length ? "No lines match." : "No output yet. Launch the game and its log will stream in here." })]));
+    con.scrollTop = con.scrollHeight;
+  };
+  q.addEventListener("input", () => { state.logQuery = q.value; paint(); });
+  const copy = el("button", { textContent: "Copy" });
+  copy.addEventListener("click", () => { navigator.clipboard?.writeText((state.logs.get(i.id) || []).map((l) => l.text).join("\n")).then(() => toast("Log copied")).catch(() => {}); });
+  const clear = el("button", { textContent: "Clear" });
+  clear.addEventListener("click", async () => { await invoke("clear_log", { id: i.id }).catch(() => {}); state.logs.set(i.id, []); paint(); });
+  body.append(el("div", { className: "logpanel" }, el("div", { className: "lh" }, el("h3", { textContent: "Game output" }), el("div", { className: "acts" }, copy, clear)), q, pills, con));
+  logEls = { id: i.id, con, paint };
+  paint();
+}
+function appendLog(lines) {
+  if (!logEls) return;
+  const { con, paint } = logEls, near = con.scrollHeight - con.scrollTop - con.clientHeight < 60;
+  const rows = lines.filter(logMatch);
+  if (con.querySelector(".none")) return paint();
+  con.append(...rows.map(logRow));
+  while (con.childElementCount > MAX_ROWS) con.firstElementChild.remove();
+  if (near) con.scrollTop = con.scrollHeight;
+}
+
+// ---------- new version ----------
 function fillVersions() {
   const sel = $("new-version"), items = state.versions.filter((v) => v.kind === state.kind);
   sel.replaceChildren(...items.map((v) => el("option", { value: v.id, textContent: v.id + (v.id === state.latest ? "  ·  latest" : "") })));
@@ -523,17 +485,13 @@ $("new-form").addEventListener("submit", async (ev) => {
   const notes = [];
   if (mods.length) {
     const end = busy("Setting up modules…");
-    for (const m of mods) {
-      try { await invoke("enable_module", { id: created.id, module: m }); }
-      catch (e) { notes.push(String(e)); }
-    }
-    end();
-    await refresh();
+    for (const m of mods) { try { await invoke("enable_module", { id: created.id, module: m }); } catch (e) { notes.push(String(e)); } }
+    end(); await refresh();
   }
   if (notes.length) toast(notes[0], true);
+  state.selected = created.id;
   openInstance(created.id, "modules");
 });
-window.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") { e.preventDefault(); openNew(); } });
 
 // ---------- settings ----------
 async function loadInfo() {
@@ -546,10 +504,3 @@ $("cid-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   try { await invoke("set_client_id", { id: $("client-id").value }); await loadAccounts(); toast("Saved"); } catch (err) { toast(String(err), true); }
 });
-
-// ---------- boot ----------
-(async () => {
-  try { state.modules = await invoke("list_modules"); } catch {}
-  await Promise.allSettled([loadAccounts(), refresh()]);
-  go("home");
-})();

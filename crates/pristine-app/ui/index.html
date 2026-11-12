@@ -6,127 +6,140 @@
   <title>Pristine</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
-  <div class="glow" id="glow"></div>
-  <aside class="sidebar">
-    <div class="drag" data-tauri-drag-region></div>
-    <div class="brand"><span class="logo">P</span><span>Pristine</span></div>
-    <nav>
-      <button class="nav active" data-view="home"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z"/></svg>Home</button>
-      <button class="nav" data-view="library"><svg viewBox="0 0 24 24"><path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z"/></svg>Library</button>
-      <button class="nav" data-view="browse"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>Browse</button>
-      <button class="nav" data-view="settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg>Settings</button>
+<body data-view="home">
+  <div class="bg" id="bg"><i></i><i></i><i></i></div>
+
+  <header class="top" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l11 6.5v13L16 29 5 22.5v-13z"/><path d="M10.5 18.5a6.5 6.5 0 0 1 11 0"/></svg>
+      <span class="word">PRISTINE</span>
+    </div>
+    <nav class="pillnav" data-tauri-drag-region>
+      <button class="nav active" data-view="home">Home</button>
+      <button class="nav" data-view="versions">Versions</button>
+      <button class="nav" data-view="browse">Browse</button>
+      <button class="nav" data-view="wardrobe">Wardrobe</button>
     </nav>
-    <button class="account" id="account-btn" aria-haspopup="dialog">
-      <div class="avatar" id="avatar">P</div>
-      <div class="account-text"><strong id="acct-name">Player</strong><span id="acct-kind">Offline account</span></div>
-      <svg class="chev" viewBox="0 0 24 24"><path d="M8 10l4-4 4 4M8 14l4 4 4-4"/></svg>
-    </button>
-  </aside>
+    <div class="tools-r" data-tauri-drag-region>
+      <button class="icon-btn" id="btn-social" title="Friends" aria-label="Friends"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18.5 14.4c1.4.7 2.2 2.3 2.5 4.6"/></svg></button>
+      <button class="icon-btn" id="btn-notif" title="Notifications" aria-label="Notifications"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></svg><span class="dot" id="notif-dot" hidden></span></button>
+      <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg></button>
+      <button class="avatar-btn" id="account-btn" title="Accounts" aria-haspopup="dialog"><img id="avatar" alt="" /></button>
+    </div>
+  </header>
 
   <main id="main">
-    <div class="drag top" data-tauri-drag-region></div>
+    <section id="view-home"></section>
 
-    <section id="view-home">
-      <header><div><h1 id="greeting">Welcome back</h1><p class="muted">Pick up where you left off.</p></div>
-        <button id="home-new" class="primary">New instance</button></header>
-      <div id="hero"></div>
-      <h2 class="sect" id="recent-title" hidden>Your instances</h2>
-      <div id="recent" class="grid"></div>
-      <h2 class="sect">Popular modpacks</h2>
-      <div id="featured" class="featured"><div class="muted">Loading…</div></div>
-    </section>
-
-    <section id="view-library" hidden>
-      <header><div><h1>Library</h1><p class="muted" id="lib-sub"></p></div>
-        <div class="tools"><input id="search" type="search" placeholder="Search instances" spellcheck="false" />
-          <button id="new-btn" class="primary">New instance <kbd>⌘N</kbd></button></div></header>
+    <section id="view-versions" hidden><div class="wrap">
+      <div class="head"><div><h1>Versions</h1><p class="muted" id="ver-sub"></p></div>
+        <div class="tools"><input id="search" type="search" placeholder="Search versions" spellcheck="false" />
+          <button id="new-btn" class="primary">New version <kbd>⌘N</kbd></button></div></div>
       <div id="grid" class="grid"></div>
       <div id="empty" class="empty" hidden>
         <div class="empty-art"><span></span><span></span><span></span><span></span></div>
-        <h2>Your library is empty</h2>
-        <p class="muted">Create an instance or grab a modpack from Browse.</p>
-        <div class="row2"><button class="primary" id="empty-new">Create an instance</button><button id="empty-browse">Browse modpacks</button></div>
+        <h2>No versions yet</h2><p class="muted">Create one, or grab a modpack from Browse.</p>
+        <div class="row2"><button class="primary" id="empty-new">Create a version</button><button id="empty-browse">Browse modpacks</button></div>
       </div>
-      <p id="no-match" class="muted center" hidden>No instances match your search.</p>
-    </section>
+      <p id="no-match" class="muted center" hidden>No versions match your search.</p>
+    </div></section>
 
-    <section id="view-browse" hidden>
-      <header><div><h1>Browse</h1><p class="muted">Mods, modpacks, resource packs, shaders and data packs from Modrinth</p></div></header>
-      <div class="kinds" id="kinds"></div>
+    <section id="view-browse" hidden><div class="wrap">
+      <div class="head">
+        <div class="titlewrap"><h1 id="b-title">Browse Mods</h1>
+          <select id="b-target" class="chip-select" aria-label="Version"></select></div>
+        <div class="seg" id="b-source"><button class="on" data-src="modrinth">Modrinth</button><button data-src="curseforge" disabled title="CurseForge needs an API key, so it isn't available yet">CurseForge</button></div>
+      </div>
+      <div class="tabs" id="b-tabs"></div>
       <div class="bar-row">
-        <input id="q" type="search" placeholder="Search Modrinth" spellcheck="false" autocomplete="off" />
-        <select id="sort" aria-label="Sort by">
-          <option value="relevance">Relevance</option><option value="downloads">Downloads</option>
-          <option value="follows">Follows</option><option value="newest">Newest</option><option value="updated">Recently updated</option>
-        </select>
+        <input id="b-q" type="search" placeholder="Search Modrinth" spellcheck="false" autocomplete="off" />
+        <select id="b-sort" aria-label="Sort by"><option value="relevance">Relevance</option><option value="downloads">Downloads</option><option value="follows">Follows</option><option value="newest">Newest</option><option value="updated">Recently updated</option></select>
       </div>
-      <div class="bar-row" id="target-row">
-        <label class="inline">Install to <select id="target"></select></label>
-        <label class="inline check"><input type="checkbox" id="compat" checked /> Only show compatible</label>
-      </div>
-      <div id="results" class="results"></div>
-      <div class="center"><button id="more" hidden>Load more</button></div>
-    </section>
+      <div class="layout"><aside class="cats" id="b-cats"></aside>
+        <div><div id="b-grid" class="mgrid"></div><div class="pager" id="b-pager"></div></div></div>
+    </div></section>
+
+    <section id="view-wardrobe" hidden><div class="wrap">
+      <div class="head"><div><h1>Wardrobe</h1><p class="muted">Your skins. Preview them in 3D and apply one to your Microsoft account.</p></div>
+        <div class="tools"><button id="skin-import" class="primary">Import skin</button></div></div>
+      <div class="wlayout"><div><div id="skin-grid" class="sgrid"></div></div>
+        <aside class="preview"><div class="stage3d" id="stage3d"></div>
+          <div class="pnav"><button class="icon-btn" id="skin-prev" aria-label="Previous skin">‹</button><div class="pname" id="skin-name"></div><button class="icon-btn" id="skin-next" aria-label="Next skin">›</button></div>
+          <label class="inline check"><input type="checkbox" id="skin-slim" /> Slim arms</label>
+          <div class="row2"><button class="primary" id="skin-apply">Apply to account</button><button id="skin-delete" class="danger">Delete</button></div>
+          <p class="muted small" id="skin-hint"></p></aside></div>
+      <input type="file" id="skin-file" accept="image/png" hidden />
+    </div></section>
 
     <section id="view-instance" hidden></section>
 
-    <section id="view-settings" hidden>
-      <header><div><h1>Settings</h1><p class="muted">Where Pristine keeps things</p></div></header>
+    <section id="view-settings" hidden><div class="wrap">
+      <div class="head"><div><h1>Settings</h1><p class="muted">Where Pristine keeps things</p></div></div>
       <div class="panel"><dl id="info"></dl></div>
       <div class="panel note">
         <strong>Microsoft sign-in</strong>
         <p class="muted">Needed to join online servers. Pristine uses your own Azure app registration: create one (public client, personal Microsoft accounts, "Allow public client flows" on), get it approved for the Minecraft API, then paste its Application (client) ID here.</p>
         <form id="cid-form" class="inline"><input id="client-id" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false" autocomplete="off" /><button class="primary" type="submit">Save</button></form>
       </div>
-    </section>
+    </div></section>
   </main>
+
+  <div class="float" id="social" hidden>
+    <div class="who"><img id="social-avatar" alt="" /><div><strong id="social-name">Player</strong><span class="status-line"><i class="live" id="social-dot"></i><span id="social-status">Offline</span></span></div></div>
+    <div class="tabs small"><button class="on" data-st="chat">Friends &amp; chat</button><button data-st="party">Party</button></div>
+    <input type="search" placeholder="Search" disabled />
+    <div class="seg full" id="social-seg"><button class="on" data-s="Chats">Chats</button><button data-s="Friends">Friends</button><button data-s="Groups">Groups</button></div>
+    <div class="empty-mini" id="social-empty"></div>
+  </div>
+
+  <div class="float notif" id="notif" hidden>
+    <h3>Notifications</h3>
+    <div id="notif-list" class="nlist"></div>
+    <div class="nfoot"><button id="notif-clear">Clear all</button></div>
+  </div>
 
   <dialog id="new-dialog">
     <form method="dialog" id="new-form">
-      <h2>New instance</h2>
+      <h2>New version</h2>
       <label>Name<input id="new-name" required placeholder="Survival world" autocomplete="off" spellcheck="false" /></label>
       <div class="field"><span class="label">Mod loader</span>
-        <div class="seg" id="loader-seg"><button type="button" data-loader="fabric" class="on">Fabric</button><button type="button" data-loader="quilt">Quilt</button><button type="button" data-loader="vanilla">Vanilla</button></div>
-      </div>
+        <div class="seg" id="loader-seg"><button type="button" data-loader="fabric" class="on">Fabric</button><button type="button" data-loader="quilt">Quilt</button><button type="button" data-loader="vanilla">Vanilla</button></div></div>
       <div class="field"><span class="label">Minecraft version</span>
         <div class="seg" id="kind-seg"><button type="button" class="on" data-kind="release">Releases</button><button type="button" data-kind="snapshot">Snapshots</button></div>
-        <select id="new-version" size="5"></select>
-      </div>
+        <select id="new-version" size="5"></select></div>
       <div class="field" id="new-modules"><span class="label">Start with modules</span><div id="new-module-list" class="chips"></div></div>
       <p id="new-error" class="error" hidden></p>
       <div class="actions"><button type="button" id="new-cancel">Cancel</button><button type="submit" class="primary" id="new-create">Create</button></div>
     </form>
   </dialog>
 
-  <dialog id="world-dialog">
-    <form method="dialog" onsubmit="return false">
-      <h2>Install data pack</h2>
-      <p class="muted">Data packs belong to a world. Choose where to put this one.</p>
-      <select id="world-select"></select>
-      <div class="actions"><button type="button" id="world-cancel">Cancel</button><button type="button" class="primary" id="world-ok">Install</button></div>
-    </form>
-  </dialog>
+  <dialog id="world-dialog"><form method="dialog" onsubmit="return false">
+    <h2>Install data pack</h2><p class="muted">Data packs belong to a world. Choose where to put this one.</p>
+    <select id="world-select"></select>
+    <div class="actions"><button type="button" id="world-cancel">Cancel</button><button type="button" class="primary" id="world-ok">Install</button></div>
+  </form></dialog>
 
-  <dialog id="accounts-dialog">
-    <form method="dialog" onsubmit="return false">
-      <h2>Accounts</h2><div id="acct-list" class="acct-list"></div>
-      <div class="actions spread"><button type="button" id="add-ms" class="primary">Add Microsoft account</button><button type="button" id="accounts-close">Done</button></div>
-    </form>
-  </dialog>
+  <dialog id="accounts-dialog"><form method="dialog" onsubmit="return false">
+    <h2>Accounts</h2><div id="acct-list" class="acct-list"></div>
+    <div class="actions spread"><button type="button" id="add-ms" class="primary">Add Microsoft account</button><button type="button" id="accounts-close">Done</button></div>
+  </form></dialog>
 
-  <dialog id="signin-dialog">
-    <form method="dialog" onsubmit="return false">
-      <h2>Sign in with Microsoft</h2><p class="muted">Open the sign-in page and enter this code:</p>
-      <div class="code" id="code"></div>
-      <div class="row2"><button type="button" id="open-link" class="primary">Open sign-in page</button><button type="button" id="copy-code">Copy code</button></div>
-      <p id="signin-status" class="muted"></p>
-      <div class="actions"><button type="button" id="signin-cancel">Cancel</button></div>
-    </form>
-  </dialog>
+  <dialog id="signin-dialog"><form method="dialog" onsubmit="return false">
+    <h2>Sign in with Microsoft</h2><p class="muted">Open the sign-in page and enter this code:</p>
+    <div class="code" id="code"></div>
+    <div class="row2"><button type="button" id="open-link" class="primary">Open sign-in page</button><button type="button" id="copy-code">Copy code</button></div>
+    <p id="signin-status" class="muted"></p>
+    <div class="actions"><button type="button" id="signin-cancel">Cancel</button></div>
+  </form></dialog>
 
   <div id="busy" class="busy" hidden><span class="spin"></span><span id="busy-text"></span></div>
   <div id="toast" class="toast" role="status" hidden></div>
+
+  <script src="art.js"></script>
   <script src="app.js"></script>
+  <script src="browse.js"></script>
+  <script src="wardrobe.js"></script>
+  <script src="panels.js"></script>
+  <script src="main.js"></script>
 </body>
 </html>

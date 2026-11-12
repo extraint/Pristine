@@ -19,6 +19,13 @@ pub struct LaunchCommand {
 }
 
 impl LaunchCommand {
+    /// Spawn with stdout/stderr captured so a launcher can show the game's output.
+    pub fn spawn_piped(&self) -> Result<Child> {
+        use std::process::Stdio;
+        Ok(Command::new(&self.program).args(&self.args).current_dir(&self.cwd)
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?)
+    }
+
     pub fn spawn(&self) -> Result<Child> {
         Ok(Command::new(&self.program).args(&self.args).current_dir(&self.cwd).spawn()?)
     }
@@ -106,6 +113,19 @@ pub fn build_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn spawn_piped_captures_both_streams() {
+        use std::io::Read;
+        let cmd = LaunchCommand { program: "sh".into(), args: vec!["-c".into(), "echo out; echo err 1>&2".into()], cwd: std::env::temp_dir() };
+        let mut child = cmd.spawn_piped().unwrap();
+        let (mut o, mut e) = (String::new(), String::new());
+        child.stdout.take().unwrap().read_to_string(&mut o).unwrap();
+        child.stderr.take().unwrap().read_to_string(&mut e).unwrap();
+        child.wait().unwrap();
+        assert_eq!((o.trim(), e.trim()), ("out", "err"));
+    }
 
     #[test]
     fn substitutes_vars() {

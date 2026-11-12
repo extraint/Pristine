@@ -6,11 +6,28 @@ use pristine_core::content::{self, ContentView};
 use pristine_core::modrinth::{Kind, SearchParams, SearchResult};
 use pristine_core::modules::{self, ModuleDef, ModuleReport};
 use pristine_core::msa::DeviceCode;
+use pristine_core::logparse::{classify, LogLine};
+use pristine_core::skins::{self, SkinEntry};
 use pristine_core::{Account, Instance, Loader, Paths, Pristine, Progress, ProgressFn};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Read};
+use std::process::Child;
+use std::sync::mpsc::{channel, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
-use tauri::{AppHandle, Emitter, State};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter, Manager, State};
+
+const LOG_CAP: usize = 5000;
+
+/// Running game processes, by instance id.
+#[derive(Default)]
+struct Games(Mutex<HashMap<String, Arc<Mutex<Child>>>>);
+
+/// Recent output lines per instance, so the Live Log can be opened after the fact.
+#[derive(Default)]
+struct Logs(Mutex<HashMap<String, Vec<LogLine>>>);
 
 /// Cancel flag for the sign-in currently waiting on the user, if any.
 #[derive(Default)]
@@ -51,6 +68,9 @@ struct AppInfo { data_dir: String, os: &'static str, arch: &'static str, version
 
 #[derive(Serialize, Clone)]
 struct ProgressEvent { id: String, stage: String, done: usize, total: usize }
+
+#[derive(Serialize, Clone)]
+struct LogEvent { id: String, lines: Vec<LogLine> }
 
 #[derive(Serialize, Clone)]
 struct ExitEvent { id: String, code: Option<i32> }
@@ -247,7 +267,7 @@ async fn install_instance(app: AppHandle, state: State<'_, Pristine>, id: String
 }
 
 #[tauri::command]
-async fn launch_instance(app: AppHandle, state: State<'_, Pristine>, id: String, username: String) -> CmdResult<()> {
+async fn launch_instance(app: AppHandle, state: State<'_, Pristine>, games: State<'_, Games>, logs: State<'_, Logs>, id: String, username: String) -> CmdResult<()> {
     // Use the selected Microsoft account if there is one, otherwise an offline account.
     let selected = AccountStore::load(&state.paths).selected;
     let account = match selected {
@@ -263,18 +283,126 @@ async fn launch_instance(app: AppHandle, state: State<'_, Pristine>, id: String,
     let progress = progress_emitter(app.clone(), id.clone());
     state.install_instance(&id, progress.clone()).await.map_err(err)?;
     let cmd = state.prepare_launch(&id, &account, progress).await.map_err(err)?;
-    let mut child = cmd.spawn().map_err(err)?;
+    let mut child = cmd.spawn_piped().map_err(err)?;
     if let Ok(mut inst) = Instance::load(&state.paths, &id) {
         inst.last_played = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH).ok().map(|d| d.as_secs());
         let _ = inst.save(&state.paths);
     }
+    let (stdout, stderr) = (child.stdout.take(), child.stderr.take());
+    let child = Arc::new(Mutex::new(child));
+    games.0.lock().unwrap().insert(id.clone(), child.clone());
+    logs.0.lock().unwrap().insert(id.clone(), Vec::new());
+
+    let (tx, rx) = channel::<(String, bool)>();
+    if let Some(o) = stdout { pump(o, false, tx.clone()); }
+    if let Some(e) = stderr { pump(e, true, tx.clone()); }
+    drop(tx);
+    let (app_log, log_id) = (app.clone(), id.clone());
+    std::thread::spawn(move || aggregate(app_log, log_id, rx));
+
     let exit_id = id.clone();
-    std::thread::spawn(move || {
-        let code = child.wait().ok().and_then(|s| s.code());
-        let _ = app.emit("game-exit", ExitEvent { id: exit_id, code });
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_millis(300));
+        let status = child.lock().unwrap().try_wait();
+        match status {
+            Ok(None) => continue,
+            other => {
+                let code = other.ok().flatten().and_then(|s| s.code());
+                app.state::<Games>().0.lock().unwrap().remove(&exit_id);
+                let _ = app.emit("game-exit", ExitEvent { id: exit_id, code });
+                break;
+            }
+        }
     });
     Ok(())
+}
+
+/// Read a pipe line by line (lossily, so odd bytes never end the stream).
+fn pump<R: Read + Send + 'static>(r: R, is_err: bool, tx: Sender<(String, bool)>) {
+    std::thread::spawn(move || {
+        for line in BufReader::new(r).split(b'\n') {
+            let Ok(bytes) = line else { break };
+            let text = String::from_utf8_lossy(&bytes).trim_end_matches('\r').to_string();
+            if tx.send((text, is_err)).is_err() { break; }
+        }
+    });
+}
+
+fn flush(app: &AppHandle, id: &str, n: &mut u64, batch: Vec<(String, bool)>) {
+    if batch.is_empty() { return; }
+    let lines: Vec<LogLine> = batch.into_iter().map(|(text, is_err)| {
+        let (ts, level) = classify(&text, is_err);
+        *n += 1;
+        LogLine { n: *n, ts, level, text }
+    }).collect();
+    {
+        let logs = app.state::<Logs>();
+        let mut map = logs.0.lock().unwrap();
+        let buf = map.entry(id.to_string()).or_default();
+        buf.extend(lines.iter().cloned());
+        if buf.len() > LOG_CAP { let extra = buf.len() - LOG_CAP; buf.drain(..extra); }
+    }
+    let _ = app.emit("game-log", LogEvent { id: id.to_string(), lines });
+}
+
+/// Batch output lines (startup is chatty) before handing them to the UI.
+fn aggregate(app: AppHandle, id: String, rx: std::sync::mpsc::Receiver<(String, bool)>) {
+    let mut n = 0u64;
+    loop {
+        let mut batch = Vec::new();
+        match rx.recv() { Ok(m) => batch.push(m), Err(_) => break }
+        let started = Instant::now();
+        let mut done = false;
+        while batch.len() < 300 && started.elapsed() < Duration::from_millis(80) {
+            match rx.recv_timeout(Duration::from_millis(20)) {
+                Ok(m) => batch.push(m),
+                Err(RecvTimeoutError::Timeout) => {}
+                Err(RecvTimeoutError::Disconnected) => { done = true; break; }
+            }
+        }
+        flush(&app, &id, &mut n, batch);
+        if done { break; }
+    }
+}
+
+#[tauri::command]
+fn get_log(logs: State<'_, Logs>, id: String) -> Vec<LogLine> {
+    logs.0.lock().unwrap().get(&id).cloned().unwrap_or_default()
+}
+
+#[tauri::command]
+fn clear_log(logs: State<'_, Logs>, id: String) {
+    if let Some(b) = logs.0.lock().unwrap().get_mut(&id) { b.clear(); }
+}
+
+#[tauri::command]
+fn stop_instance(games: State<'_, Games>, id: String) -> CmdResult<()> {
+    if let Some(c) = games.0.lock().unwrap().get(&id) { c.lock().unwrap().kill().map_err(err)?; }
+    Ok(())
+}
+
+#[tauri::command]
+fn running_instances(games: State<'_, Games>) -> Vec<String> {
+    games.0.lock().unwrap().keys().cloned().collect()
+}
+
+#[tauri::command]
+fn list_skins(state: State<'_, Pristine>) -> Vec<SkinEntry> { skins::list(&state.paths) }
+
+#[tauri::command]
+fn save_skin(state: State<'_, Pristine>, name: String, data: String) -> CmdResult<String> {
+    skins::save(&state.paths, &name, &data).map_err(err)
+}
+
+#[tauri::command]
+fn delete_skin(state: State<'_, Pristine>, file: String) -> CmdResult<()> {
+    skins::delete(&state.paths, &file).map_err(err)
+}
+
+#[tauri::command]
+async fn apply_skin(state: State<'_, Pristine>, file: String, slim: bool) -> CmdResult<()> {
+    state.apply_skin(&file, slim).await.map_err(err)
 }
 
 fn main() {
@@ -282,13 +410,16 @@ fn main() {
     tauri::Builder::default()
         .manage(pristine)
         .manage(LoginState::default())
+        .manage(Games::default())
+        .manage(Logs::default())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             app_info, accounts_state, get_client_id, set_client_id, select_account, remove_account,
             ms_login_start, ms_login_cancel, list_versions, list_instances, create_instance, delete_instance,
             set_memory, install_instance, launch_instance,
             list_modules, enable_module, disable_module, set_loader, search_content, install_content,
-            install_modpack, list_content, list_worlds, toggle_content, remove_content, open_instance_folder
+            install_modpack, get_log, clear_log, stop_instance, running_instances,
+            list_skins, save_skin, delete_skin, apply_skin, list_content, list_worlds, toggle_content, remove_content, open_instance_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pristine");
