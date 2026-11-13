@@ -197,7 +197,7 @@ pub fn current_arch() -> &'static str {
     else { "x86_64" }
 }
 
-fn rule_matches(rule: &Rule) -> bool {
+fn rule_matches(rule: &Rule, enabled: &[&str]) -> bool {
     if let Some(os) = &rule.os {
         if let Some(name) = &os.name {
             if name != os_name() { return false; }
@@ -207,21 +207,23 @@ fn rule_matches(rule: &Rule) -> bool {
         }
     }
     if let Some(features) = &rule.features {
-        // Pristine does not enable any optional launcher features
-        // (demo mode, custom resolution, quick play...), so a rule
-        // requiring one to be true never matches.
-        if features.values().any(|&required| required) { return false; }
+        // Optional launcher features (quick play, demo mode, custom resolution...)
+        // match only when the caller turned them on.
+        if features.iter().any(|(name, &want)| enabled.contains(&name.as_str()) != want) { return false; }
     }
     true
 }
 
 /// Evaluate a rule list: no rules = allowed; otherwise the last matching rule wins.
-pub fn rules_allow(rules: Option<&[Rule]>) -> bool {
+pub fn rules_allow(rules: Option<&[Rule]>) -> bool { rules_allow_with(rules, &[]) }
+
+/// Like [`rules_allow`], with some optional launcher features switched on.
+pub fn rules_allow_with(rules: Option<&[Rule]>, enabled: &[&str]) -> bool {
     let Some(rules) = rules else { return true };
     if rules.is_empty() { return true; }
     let mut allowed = false;
     for r in rules {
-        if rule_matches(r) { allowed = r.action == "allow"; }
+        if rule_matches(r, enabled) { allowed = r.action == "allow"; }
     }
     allowed
 }
@@ -251,11 +253,14 @@ pub enum OneOrMany {
 }
 
 impl Argument {
-    pub fn resolve(&self) -> Vec<String> {
+    pub fn resolve(&self) -> Vec<String> { self.resolve_with(&[]) }
+
+    /// Resolve with some optional launcher features (e.g. `is_quick_play_multiplayer`) on.
+    pub fn resolve_with(&self, enabled: &[&str]) -> Vec<String> {
         match self {
             Argument::Plain(s) => vec![s.clone()],
             Argument::Conditional { rules, value } => {
-                if !rules_allow(Some(rules)) { return vec![]; }
+                if !rules_allow_with(Some(rules), enabled) { return vec![]; }
                 match value {
                     OneOrMany::One(s) => vec![s.clone()],
                     OneOrMany::Many(v) => v.clone(),
@@ -320,6 +325,14 @@ mod tests {
             os: None,
             features: Some(HashMap::from([("is_demo_user".to_string(), true)])),
         };
-        assert!(!rules_allow(Some(&[r])));
+        assert!(!rules_allow(Some(&[r.clone()])));
+        assert!(rules_allow_with(Some(&[r]), &["is_demo_user"]));
+    }
+
+    #[test]
+    fn quick_play_argument_follows_feature() {
+        let a: Argument = serde_json::from_str(r#"{"rules":[{"action":"allow","features":{"is_quick_play_multiplayer":true}}],"value":["--quickPlayMultiplayer","${quickPlayMultiplayer}"]}"#).unwrap();
+        assert!(a.resolve().is_empty());
+        assert_eq!(a.resolve_with(&["is_quick_play_multiplayer"]), vec!["--quickPlayMultiplayer", "${quickPlayMultiplayer}"]);
     }
 }

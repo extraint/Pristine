@@ -63,7 +63,7 @@ function currentAccount() {
 function pix(seed, cls = "pix") { return el("img", { className: cls, src: pixelAvatar(seed), alt: "" }); }
 function paintAccount() {
   const a = currentAccount();
-  $("avatar").src = pixelAvatar(a.seed); $("account-btn").title = `${a.name} · ${a.kind}`;
+  $("avatar").src = state.head || pixelAvatar(a.seed); $("account-btn").title = `${a.name} · ${a.kind}`; $("acct-name").textContent = a.name;
   if (typeof paintSocial === "function") paintSocial();
 }
 async function loadAccounts() { state.acct = await invoke("accounts_state"); paintAccount(); }
@@ -112,7 +112,7 @@ listen("ms-login", async ({ payload: p }) => {
 });
 
 // ---------- navigation ----------
-const VIEWS = ["home", "versions", "browse", "wardrobe", "instance", "settings"];
+const VIEWS = ["home", "versions", "browse", "wardrobe", "instance", "settings", "social", "stats", "news"];
 function go(view) {
   state.view = view;
   document.body.dataset.view = view;
@@ -126,7 +126,8 @@ function go(view) {
 function renderCurrent() {
   state.ctl.clear();
   setGlow(null);
-  ({ home: renderHome, versions: renderVersions, browse: renderBrowse, wardrobe: renderWardrobe, instance: renderInstance, settings: loadInfo })[state.view]();
+  const noop = () => {};
+  ({ home: renderHome, versions: renderVersions, browse: renderBrowse, wardrobe: renderWardrobe, instance: renderInstance, settings: loadInfo, social: noop, stats: noop, news: noop })[state.view]();
 }
 document.querySelectorAll(".nav").forEach((b) => b.addEventListener("click", () => go(b.dataset.view)));
 $("btn-settings").addEventListener("click", () => go("settings"));
@@ -134,7 +135,7 @@ function openInstance(id, tab = "mod") { state.instId = id; state.tab = tab; go(
 async function refresh() { state.instances = await invoke("list_instances"); renderCurrent(); }
 
 // ---------- play controller ----------
-function controller(i, { bar, status, play, stop }) {
+function controller(i, { bar, status, play, stop, quick }) {
   const sync = () => {
     const running = state.running.has(i.id), working = state.busy.has(i.id);
     play.disabled = working || running;
@@ -147,9 +148,10 @@ function controller(i, { bar, status, play, stop }) {
     e.stopPropagation();
     state.busy.add(i.id); sync(); status.textContent = "Preparing…";
     try {
-      await invoke("launch_instance", { id: i.id, username: offlineName });
+      await invoke("launch_instance", { id: i.id, username: offlineName, quick: (quick && quick()) || null });
       state.running.add(i.id); i.installed = true; status.textContent = "Game is running";
       state.logs.set(i.id, []);
+      if (state.view === "home" && typeof paintPills === "function") paintPills();
     } catch (err) { toast(String(err), true); status.textContent = ""; }
     finally { state.busy.delete(i.id); bar.style.width = "0"; sync(); }
   });
@@ -195,51 +197,6 @@ function renderCard(i, n) {
   card.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === card) openInstance(i.id); });
   controller(i, { bar, status, play });
   return card;
-}
-
-async function renderHome() {
-  const sec = $("view-home");
-  const byRecent = [...state.instances].sort((a, b) => (b.last_played || 0) - (a.last_played || 0));
-  const sel = inst(state.selected) || byRecent[0] || null;
-  state.selected = sel ? sel.id : null;
-  const bar = el("i"), status = el("div", { className: "status" }), play = el("button", { className: "play" }), stop = el("button", { className: "stop", textContent: "Stop" });
-  stop.hidden = true;
-  const info = sel
-    ? el("div", {}, el("h1", { textContent: vname(sel) }), el("div", { className: "sub", textContent: `Pristine · ${sel.name}` }))
-    : el("div", {}, el("h1", { textContent: "Welcome" }), el("div", { className: "sub", textContent: "Create a version or install a modpack to start playing." }));
-  let cta;
-  if (sel) { controller(sel, { bar, status, play, stop }); cta = el("div", { className: "cta" }, el("div", { className: "btns" }, play, stop), el("div", { className: "bar" }, bar), status); }
-  else { const b = el("button", { className: "play", textContent: "Create a version" }); b.addEventListener("click", openNew); cta = el("div", { className: "cta" }, b); }
-
-  const stage = el("div", { className: "stage" }, el("div", { className: "art", innerHTML: sceneSVG(sel ? sel.id : "pristine", "wide") }),
-    el("div", { className: "stage-info" }, el("div", { className: "wrap" }, info, cta)));
-
-  const cards = byRecent.slice(0, 5).map((i) => {
-    const c = el("button", { className: "vcard" + (sel && i.id === sel.id ? " sel" : ""), title: i.name }, art(i.id),
-      el("div", { className: "lab" }, el("strong", { textContent: vname(i) }), el("span", { textContent: i.name })));
-    c.addEventListener("click", () => { state.selected = i.id; renderCurrent(); });
-    return c;
-  });
-  const grid = el("button", { className: "gridbtn", title: "All versions", ariaLabel: "All versions", innerHTML: '<svg viewBox="0 0 24 24"><path d="M4 5h6v6H4zM14 5h6v6h-6zM4 15h6v4H4zM14 15h6v4h-6z"/></svg>' });
-  grid.addEventListener("click", () => go("versions"));
-  const row = el("div", { className: "vrow" }, ...cards, ...(cards.length ? [grid] : []));
-
-  const featured = el("div", { className: "featured" }, el("div", { className: "muted", textContent: "Loading…" }));
-  sec.replaceChildren(stage, el("div", { className: "wrap" }, row, el("h2", { className: "sect", textContent: "Popular modpacks" }), featured));
-
-  if (!state.featured) {
-    try {
-      const r = await invoke("search_content", { params: { query: "", kind: "modpack", loader: "fabric", offset: 0, index: "downloads", categories: [] } });
-      state.featured = r.hits.slice(0, 6);
-    } catch { state.featured = []; }
-  }
-  if (state.view !== "home") return;
-  featured.replaceChildren(...(state.featured.length ? state.featured.map((p) => {
-    const btn = el("button", { textContent: "Install" });
-    btn.addEventListener("click", () => installModpack(p, btn));
-    return el("div", { className: "pack" }, projectIcon(p.icon_url, p.title),
-      el("div", { className: "txt" }, el("strong", { textContent: p.title }), el("small", { textContent: `${compact.format(p.downloads)} downloads · ${p.author}` })), btn);
-  }) : [el("div", { className: "muted", textContent: "Couldn't reach Modrinth. Check your connection." })]));
 }
 
 function renderVersions() {

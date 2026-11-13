@@ -17,6 +17,7 @@ pub mod modrinth;
 pub mod modules;
 pub mod msa;
 pub mod paths;
+pub mod servers;
 pub mod skins;
 
 pub use auth::Account;
@@ -132,7 +133,7 @@ impl Pristine {
     }
 
     /// Build the launch command for an installed instance.
-    pub async fn prepare_launch(&self, id: &str, account: &Account, progress: ProgressFn) -> Result<LaunchCommand> {
+    pub async fn prepare_launch(&self, id: &str, account: &Account, quick: Option<&launch::QuickPlay>, progress: ProgressFn) -> Result<LaunchCommand> {
         let inst = Instance::load(&self.paths, id)?;
         let meta = self.resolve_meta(&inst)?;
         let java = match &inst.java_path {
@@ -140,7 +141,7 @@ impl Pristine {
             None => java::ensure_java(&self.paths, &self.client, meta.java_major(), &progress).await?,
         };
         std::fs::create_dir_all(self.paths.game_dir(id))?;
-        Ok(launch::build_command(&self.paths, &meta, &inst, java, account))
+        Ok(launch::build_command(&self.paths, &meta, &inst, java, account, quick))
     }
 
     // ----- Modrinth & content -----

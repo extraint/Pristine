@@ -88,14 +88,22 @@ function sampleSkin(seed) {
  * Build a rotatable 3D player from a 64x64 / 64x32 skin using CSS transforms.
  * Returns { set(url, slim), destroy() }.
  */
-function skin3d(root) {
-  const S = 9, rig = document.createElement("div"); rig.className = "rig"; root.replaceChildren(rig);
-  let rotY = -28, rotX = -8, drag = null, stopped = false, last = performance.now();
+function skin3d(root, opts = {}) {
+  const S = opts.size || 9, spin = opts.spin !== false, base = opts.rotY ?? -28, rig = document.createElement("div"); rig.className = "rig"; root.replaceChildren(rig);
+  let rotY = base, rotX = opts.rotX ?? -8, drag = null, stopped = false, last = performance.now(), released = 0;
   const apply = () => { rig.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`; };
   root.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, ry: rotY, rx: rotX }; root.setPointerCapture(e.pointerId); });
   root.addEventListener("pointermove", (e) => { if (!drag) return; rotY = drag.ry + (e.clientX - drag.x) * 0.6; rotX = Math.max(-40, Math.min(40, drag.rx - (e.clientY - drag.y) * 0.4)); apply(); });
-  root.addEventListener("pointerup", () => { drag = null; });
-  const tick = (t) => { if (stopped || !root.isConnected) return; if (!drag && root.offsetParent) { rotY += (t - last) * 0.02; apply(); } last = t; requestAnimationFrame(tick); };
+  root.addEventListener("pointerup", () => { drag = null; released = performance.now(); });
+  const tick = (t) => {
+    if (stopped || !root.isConnected) return;
+    if (!drag && root.offsetParent) {
+      if (spin) rotY += (t - last) * 0.02;
+      else if (t - released > 1500) { const want = base + 9 * Math.sin(t / 1600); rotY += (want - rotY) * Math.min(1, (t - last) / 400); rotX += ((opts.rotX ?? -8) - rotX) * Math.min(1, (t - last) / 400); }
+      apply();
+    }
+    last = t; requestAnimationFrame(tick);
+  };
   requestAnimationFrame(tick); apply();
 
   function part(url, legacy, texH, [W, H, D], [u, v], [x, y, z], grow) {
@@ -136,6 +144,20 @@ function skin3d(root) {
     },
     destroy() { stopped = true; },
   };
+}
+
+/** The face (plus hat layer) of a skin, as a PNG data URL. */
+function skinHead(url) {
+  return new Promise((res) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas"); c.width = c.height = 8; const g = c.getContext("2d");
+      g.drawImage(img, 8, 8, 8, 8, 0, 0, 8, 8); if (img.naturalHeight >= 32) g.drawImage(img, 40, 8, 8, 8, 0, 0, 8, 8);
+      res(c.toDataURL());
+    };
+    img.onerror = () => res(null);
+    img.src = url;
+  });
 }
 
 /** Flat front-view thumbnail of a skin on a canvas. */

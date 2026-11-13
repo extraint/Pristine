@@ -14,17 +14,20 @@
       <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3l11 6.5v13L16 29 5 22.5v-13z"/><path d="M10.5 18.5a6.5 6.5 0 0 1 11 0"/></svg>
       <span class="word">PRISTINE</span>
     </div>
-    <nav class="pillnav" data-tauri-drag-region>
-      <button class="nav active" data-view="home">Home</button>
+    <nav class="tabnav" data-tauri-drag-region>
+      <button class="nav active" data-view="home">Play</button>
       <button class="nav" data-view="versions">Versions</button>
-      <button class="nav" data-view="browse">Browse</button>
       <button class="nav" data-view="wardrobe">Wardrobe</button>
+      <button class="nav" data-view="browse">Browse</button>
+      <button class="nav" data-view="social">Social</button>
+      <button class="nav" data-view="stats">Stats</button>
+      <button class="nav" data-view="news">News</button>
     </nav>
     <div class="tools-r" data-tauri-drag-region>
       <button class="icon-btn" id="btn-social" title="Friends" aria-label="Friends"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18.5 14.4c1.4.7 2.2 2.3 2.5 4.6"/></svg></button>
       <button class="icon-btn" id="btn-notif" title="Notifications" aria-label="Notifications"><svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/></svg><span class="dot" id="notif-dot" hidden></span></button>
       <button class="icon-btn" id="btn-settings" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></svg></button>
-      <button class="avatar-btn" id="account-btn" title="Accounts" aria-haspopup="dialog"><img id="avatar" alt="" /></button>
+      <button class="acct-btn" id="account-btn" title="Accounts" aria-haspopup="dialog"><span id="acct-name">Player</span><img id="avatar" alt="" /></button>
     </div>
   </header>
 
@@ -72,6 +75,24 @@
     </div></section>
 
     <section id="view-instance" hidden></section>
+
+    <section id="view-social" hidden><div class="wrap">
+      <div class="head"><div><h1>Social</h1><p class="muted">Friends, chat and parties.</p></div></div>
+      <div class="soon"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><path d="M16 5.2a3 3 0 0 1 0 5.6M18.5 14.4c1.4.7 2.2 2.3 2.5 4.6"/></svg>
+        <h2>Friends aren't in Pristine yet</h2><p class="muted">This tab is a placeholder. Friends, chat and parties need a Pristine account service, which doesn't exist yet.</p></div>
+    </div></section>
+
+    <section id="view-stats" hidden><div class="wrap">
+      <div class="head"><div><h1>Stats</h1><p class="muted">Your play time and records.</p></div></div>
+      <div class="soon"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+        <h2>Stats are coming</h2><p class="muted">This tab is a placeholder for play time and per-world stats.</p></div>
+    </div></section>
+
+    <section id="view-news" hidden><div class="wrap">
+      <div class="head"><div><h1>News</h1><p class="muted">What's new in Pristine and Minecraft.</p></div></div>
+      <div class="soon"><svg viewBox="0 0 24 24"><path d="M5 4h11v16H6a2 2 0 0 1-2-2V5a1 1 0 0 1 1-1z"/><path d="M16 8h3a1 1 0 0 1 1 1v9a2 2 0 0 1-4 0M8 8h5M8 12h5M8 16h3"/></svg>
+        <h2>No news yet</h2><p class="muted">This tab is a placeholder for release notes.</p></div>
+    </div></section>
 
     <section id="view-settings" hidden><div class="wrap">
       <div class="head"><div><h1>Settings</h1><p class="muted">Where Pristine keeps things</p></div></div>
@@ -136,7 +157,9 @@
   <div id="toast" class="toast" role="status" hidden></div>
 
   <script src="art.js"></script>
+  <script src="world.js"></script>
   <script src="app.js"></script>
+  <script src="home.js"></script>
   <script src="browse.js"></script>
   <script src="wardrobe.js"></script>
   <script src="panels.js"></script>

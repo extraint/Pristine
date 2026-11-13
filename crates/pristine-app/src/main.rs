@@ -7,6 +7,8 @@ use pristine_core::modrinth::{Kind, SearchParams, SearchResult};
 use pristine_core::modules::{self, ModuleDef, ModuleReport};
 use pristine_core::msa::DeviceCode;
 use pristine_core::logparse::{classify, LogLine};
+use pristine_core::launch::QuickPlay;
+use pristine_core::servers::{self, PlayerSkin, SavedServer, ServerStatus, WorldInfo};
 use pristine_core::skins::{self, SkinEntry};
 use pristine_core::{Account, Instance, Loader, Paths, Pristine, Progress, ProgressFn};
 use serde::Serialize;
@@ -267,7 +269,7 @@ async fn install_instance(app: AppHandle, state: State<'_, Pristine>, id: String
 }
 
 #[tauri::command]
-async fn launch_instance(app: AppHandle, state: State<'_, Pristine>, games: State<'_, Games>, logs: State<'_, Logs>, id: String, username: String) -> CmdResult<()> {
+async fn launch_instance(app: AppHandle, state: State<'_, Pristine>, games: State<'_, Games>, logs: State<'_, Logs>, id: String, username: String, quick: Option<QuickPlay>) -> CmdResult<()> {
     // Use the selected Microsoft account if there is one, otherwise an offline account.
     let selected = AccountStore::load(&state.paths).selected;
     let account = match selected {
@@ -282,7 +284,7 @@ async fn launch_instance(app: AppHandle, state: State<'_, Pristine>, games: Stat
     };
     let progress = progress_emitter(app.clone(), id.clone());
     state.install_instance(&id, progress.clone()).await.map_err(err)?;
-    let cmd = state.prepare_launch(&id, &account, progress).await.map_err(err)?;
+    let cmd = state.prepare_launch(&id, &account, quick.as_ref(), progress).await.map_err(err)?;
     let mut child = cmd.spawn_piped().map_err(err)?;
     if let Ok(mut inst) = Instance::load(&state.paths, &id) {
         inst.last_played = std::time::SystemTime::now()
@@ -405,6 +407,36 @@ async fn apply_skin(state: State<'_, Pristine>, file: String, slim: bool) -> Cmd
     state.apply_skin(&file, slim).await.map_err(err)
 }
 
+#[tauri::command]
+fn list_servers(state: State<'_, Pristine>, id: String) -> CmdResult<Vec<SavedServer>> {
+    Ok(servers::list_servers(&state.paths, &load_instance(&state, &id)?))
+}
+
+#[tauri::command]
+fn add_server(state: State<'_, Pristine>, id: String, name: String, ip: String) -> CmdResult<()> {
+    servers::add_server(&state.paths, &load_instance(&state, &id)?, &name, &ip).map_err(err)
+}
+
+#[tauri::command]
+fn remove_server(state: State<'_, Pristine>, id: String, ip: String) -> CmdResult<()> {
+    servers::remove_server(&state.paths, &load_instance(&state, &id)?, &ip).map_err(err)
+}
+
+#[tauri::command]
+fn world_list(state: State<'_, Pristine>, id: String) -> CmdResult<Vec<WorldInfo>> {
+    Ok(servers::list_worlds(&state.paths, &load_instance(&state, &id)?))
+}
+
+#[tauri::command]
+async fn ping_server(address: String) -> CmdResult<ServerStatus> {
+    servers::ping(&address).await.map_err(err)
+}
+
+#[tauri::command]
+async fn player_skin(state: State<'_, Pristine>, uuid: String) -> CmdResult<PlayerSkin> {
+    servers::player_skin(&state.client, &uuid).await.map_err(err)
+}
+
 fn main() {
     let pristine = Pristine::new(Paths::default_location()).expect("failed to initialise Pristine");
     tauri::Builder::default()
@@ -419,7 +451,8 @@ fn main() {
             set_memory, install_instance, launch_instance,
             list_modules, enable_module, disable_module, set_loader, search_content, install_content,
             install_modpack, get_log, clear_log, stop_instance, running_instances,
-            list_skins, save_skin, delete_skin, apply_skin, list_content, list_worlds, toggle_content, remove_content, open_instance_folder
+            list_skins, save_skin, delete_skin, apply_skin, list_content, list_worlds, toggle_content, remove_content, open_instance_folder,
+            list_servers, add_server, remove_server, world_list, ping_server, player_skin
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pristine");

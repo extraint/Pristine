@@ -145,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Cmd::Install { id } => app.install_instance(&id, progress()).await?,
         Cmd::Launch { id, offline, dry_run } => {
             app.install_instance(&id, progress()).await?;
-            let cmd = app.prepare_launch(&id, &Account::offline(&offline), progress()).await?;
+            let cmd = app.prepare_launch(&id, &Account::offline(&offline), None, progress()).await?;
             if dry_run {
                 println!("{} {}", cmd.program.display(), cmd.args.join(" "));
             } else {
