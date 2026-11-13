@@ -58,7 +58,8 @@ async function pingServer(ip, force = false) {
   let st;
   try { st = { ...(await invoke("ping_server", { address: ip })), at: Date.now() }; } catch { st = { at: Date.now(), offline: true }; }
   home.status.set(ip, st);
-  if (state.view === "home") paintCard();
+  // Repainting would wipe a half-typed address in the add form; it repaints when that closes.
+  if (state.view === "home" && !home.adding) paintCard();
 }
 
 // ---------- render ----------
@@ -69,7 +70,8 @@ async function renderHome() {
   state.selected = sel ? sel.id : null;
   if (!sec.querySelector(".world")) buildHome(sec);
   paintWorld(sel ? sel.id : "pristine");
-  if (sel && home.loadedFor !== sel.id) await loadPlayData(sel);
+  // Read the lists every time: the game may have added servers or worlds since.
+  if (sel) await loadPlayData(sel);
   if (state.view !== "home") return;
   paintCard(); paintPills(); paintFoot();
   heroSkin().then((s) => { if (home.hero) home.hero.set(s.url, s.slim); }).catch(() => {});

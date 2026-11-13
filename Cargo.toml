@@ -25,3 +25,4 @@ md-5 = "0.10"
 uuid = { version = "1", features = ["v4", "serde"] }
 tracing = "0.1"
 base64 = "0.22"
+hickory-resolver = { version = "0.24", default-features = false, features = ["tokio-runtime", "system-config"] }

@@ -158,7 +158,10 @@ function controller(i, { bar, status, play, stop, quick }) {
   if (stop) stop.addEventListener("click", (e) => { e.stopPropagation(); invoke("stop_instance", { id: i.id }).catch((err) => toast(String(err), true)); });
   const c = { bar, status, play, stop, sync };
   if (!state.ctl.has(i.id)) state.ctl.set(i.id, new Set());
-  state.ctl.get(i.id).add(c);
+  const set = state.ctl.get(i.id);
+  // Cards get rebuilt often (the home card on every ping), so drop ones no longer on screen.
+  for (const old of set) if (!old.play.isConnected) set.delete(old);
+  set.add(c);
   sync();
 }
 const STAGES = { "version manifest": "Fetching versions", libraries: "Downloading libraries", assets: "Downloading assets", "java runtime": "Installing Java", modpack: "Fetching modpack", "modpack files": "Downloading modpack files" };

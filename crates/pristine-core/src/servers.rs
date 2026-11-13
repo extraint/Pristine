@@ -219,7 +219,9 @@ pub fn remove_server(paths: &Paths, inst: &Instance, ip: &str) -> Result<()> {
             list.retain(|s| s.str("ip") != Some(ip));
         }
     }
-    std::fs::write(&path, write_nbt(&root))?;
+    let tmp = path.with_extension("dat_new");
+    std::fs::write(&tmp, write_nbt(&root))?;
+    std::fs::rename(tmp, path)?;
     Ok(())
 }
 
@@ -260,7 +262,7 @@ pub fn list_worlds(paths: &Paths, inst: &Instance) -> Vec<WorldInfo> {
             icon,
         })
     }).collect();
-    out.sort_by(|a, b| b.last_played.cmp(&a.last_played));
+    out.sort_by_key(|w| std::cmp::Reverse(w.last_played));
     out
 }
 
@@ -322,13 +324,28 @@ fn flatten_motd(v: &serde_json::Value) -> String {
     }
 }
 
+/// Many hosted servers publish only a `_minecraft._tcp` SRV record, which the game
+/// follows when the address has no port. Do the same, so their status shows up.
+async fn srv_target(address: &str, host: &str) -> Option<(String, u16)> {
+    let has_port = address.trim().rsplit_once(':').is_some_and(|(h, p)| !h.ends_with(':') && p.parse::<u16>().is_ok());
+    if has_port || host.parse::<std::net::IpAddr>().is_ok() || host.eq_ignore_ascii_case("localhost") { return None; }
+    let resolver = hickory_resolver::TokioAsyncResolver::tokio_from_system_conf().ok()?;
+    let lookup = resolver.srv_lookup(format!("_minecraft._tcp.{host}."));
+    let found = tokio::time::timeout(Duration::from_secs(2), lookup).await.ok()?.ok()?;
+    let rec = found.iter().min_by_key(|r| (r.priority(), std::cmp::Reverse(r.weight())))?;
+    let target = rec.target().to_utf8();
+    let target = target.trim_end_matches('.');
+    (!target.is_empty()).then(|| (target.to_string(), rec.port()))
+}
+
 /// Ask a server for its status the way the game's Multiplayer screen does.
 pub async fn ping(address: &str) -> Result<ServerStatus> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let (host, port) = crate::launch::split_address(address);
     let t = Duration::from_secs(5);
     let fut = async {
-        let mut s = tokio::net::TcpStream::connect((host.as_str(), port)).await?;
+        let (to_host, to_port) = srv_target(address, &host).await.unwrap_or_else(|| (host.clone(), port));
+        let mut s = tokio::net::TcpStream::connect((to_host.as_str(), to_port)).await?;
         let mut hs = Vec::new();
         varint(-1, &mut hs); // protocol version: "any" for a status query
         varint(host.len() as i32, &mut hs);
@@ -446,6 +463,13 @@ mod tests {
             vec![("Hub", "mc.example.net"), ("Minecraft Server", "10.0.0.2:25570")]);
         remove_server(&paths, &i, "mc.example.net").unwrap();
         assert_eq!(list_servers(&paths, &i).len(), 1);
+    }
+
+    #[tokio::test]
+    async fn srv_lookup_skips_ports_and_ips() {
+        assert!(srv_target("127.0.0.1", "127.0.0.1").await.is_none());
+        assert!(srv_target("play.example.net:25570", "play.example.net").await.is_none());
+        assert!(srv_target("[::1]:25565", "::1").await.is_none());
     }
 
     #[test]

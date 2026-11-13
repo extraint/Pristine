@@ -41,7 +41,7 @@ pub fn list(paths: &Paths) -> Vec<SkinEntry> {
         validate_png(&bytes).ok()?;
         Some(SkinEntry { name: file.trim_end_matches(".png").replace('-', " "), data: STANDARD.encode(bytes), file })
     }).collect();
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|a| a.name.to_lowercase());
     out
 }
 

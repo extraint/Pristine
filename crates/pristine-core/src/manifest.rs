@@ -325,7 +325,7 @@ mod tests {
             os: None,
             features: Some(HashMap::from([("is_demo_user".to_string(), true)])),
         };
-        assert!(!rules_allow(Some(&[r.clone()])));
+        assert!(!rules_allow(Some(std::slice::from_ref(&r))));
         assert!(rules_allow_with(Some(&[r]), &["is_demo_user"]));
     }
 

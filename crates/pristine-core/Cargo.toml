@@ -21,3 +21,4 @@ md-5.workspace = true
 uuid.workspace = true
 tracing.workspace = true
 base64.workspace = true
+hickory-resolver.workspace = true

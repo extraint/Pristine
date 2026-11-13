@@ -13,7 +13,7 @@ pub fn parse_major(output: &str) -> Option<u32> {
     let start = output.find('"')? + 1;
     let rest = &output[start..];
     let ver = &rest[..rest.find('"')?];
-    let mut parts = ver.split(|c: char| c == '.' || c == '_' || c == '-' || c == '+');
+    let mut parts = ver.split(['.', '_', '-', '+']);
     let first: u32 = parts.next()?.parse().ok()?;
     if first == 1 { parts.next()?.parse().ok() } else { Some(first) }
 }
